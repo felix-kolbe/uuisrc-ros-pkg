@@ -66,8 +66,6 @@ class RosCommunication():
                 jtype = child.getAttribute('type')
                 if jtype == 'fixed':
                     continue
-                if name in self.dependent_joints or len(child.getElementsByTagName('mimic')) != 0:
-                    continue
                     
                 # encoding needed for most lookups like "self.roscomms.joint_list[module]"
                 name = child.getAttribute('name').encode('ascii')
@@ -79,6 +77,8 @@ class RosCommunication():
                     minval = float(limit.getAttribute('lower'))
                     maxval = float(limit.getAttribute('upper'))
 
+                if name in self.dependent_joints or len(child.getElementsByTagName('mimic')) != 0:
+                    continue
 
                 if minval > 0 or maxval < 0:
                     zeroval = (maxval + minval)/2
@@ -86,9 +86,9 @@ class RosCommunication():
                     zeroval = 0
 
                 joint = {'min':minval, 'max':maxval, 'zero':zeroval, 'value':zeroval }
-                self.free_joints[name] = joint				# store joint
-                self.joint_list.append(name)				# store joints name
-                self.joint_lookup[name] = self.numModules	# store index for joint
+                self.free_joints[name] = joint              # store joint
+                self.joint_list.append(name)                # store joints name
+                self.joint_lookup[name] = self.numModules   # store index for joint
                 self.numModules += 1                
 
         # Setup all of the pubs and subs
@@ -304,7 +304,8 @@ class SchunkTextControl:
         self.posesframe_spinButtons = []
         for i in range (0,self.numModules):
             #name = "joint " + str(i) + ":"
-            name = str(i) + ":"
+            #name = str(i) + ":"
+            name = str(i) + " (" + self.roscomms.joint_list[i] + "):"
             vbox = gtk.VBox(False, 0)
             posesframe_vboxes.append(vbox)
             label = gtk.Label(name)
@@ -328,7 +329,7 @@ class SchunkTextControl:
         velframe_labels = []
         self.velframe_spinButtons = []
         for i in range (0,self.numModules):
-            name = str(i) + ":"
+            name = str(i) + " (" + self.roscomms.joint_list[i] + "):"
             vbox = gtk.VBox(False, 0)
             velframe_vboxes.append(vbox)
             label = gtk.Label(name)
@@ -348,23 +349,33 @@ class SchunkTextControl:
         
         # flags fields
         flagsTitles = ["Position", "Referenced", "MoveEnd", "Brake", "Warning", "Current", "Moving", "PosReached", "Error", "Error code"]
-        self.flagsDict = {"Position":0, "Referenced":1, "MoveEnd":2, "Brake":3, "Warning": 4, "Current":5, "Moving":6, "PosReached":7, "Error":8, "ErrorCode": 9}
+        self.flagsDict = {"Position":0, "Referenced":1, "MoveEnd":2, "Brake":3, "Warning":4, "Current":5, "Moving":6, "PosReached":7, "Error":8, "ErrorCode":9}
         self.tableFlags = gtk.Table(self.numModules+1, len(flagsTitles)+1, homogeneous=False)
         self.tableFlags.set_col_spacings(12)
         self.wTree.get_object("flagsFrame").add(self.tableFlags)
-        label = gtk.Label("#")
+        label = gtk.Label("# (Name)")
+        label.set_alignment(0, 0.5)
         self.tableFlags.attach(label, 0, 1, 0, 1)
-        for i in range(1,len(flagsTitles)+1): # skip first column
-            label = gtk.Label(flagsTitles[i-1])
-            self.tableFlags.attach(label, i, i+1, 0, 1)
+
+        # table header row
+        for i in range(len(flagsTitles)):
+            label = gtk.Label(flagsTitles[i])
+            self.tableFlags.attach(label, 1+i, 1+i+1, 0, 1) # skip first column
+
+        # for each joint every column
         self.flags = []
-        for i in range(1,self.numModules+1): # need to skip first title row
-            label = gtk.Label(str(i-1)+":")
-            self.tableFlags.attach(label, 0, 1, i, i+1)
+        for i in range(self.numModules):
+            # joint index
+            label = gtk.Label(str(i) + " (" + self.roscomms.joint_list[i] + "):")
+            #label.set_justify(gtk.JUSTIFY_LEFT)
+            label.set_alignment(0, 0.5)
+            self.tableFlags.attach(label, 0, 1, 1+i, 1+i+1) # need to skip first title row
+
+            # joint flags
             flagsRow = []
-            for j in range(1,len(flagsTitles)+1): # also skip first index column
+            for j in range(len(flagsTitles)):
                 label = gtk.Label(".")
-                self.tableFlags.attach(label, j, j+1, i, i+1)
+                self.tableFlags.attach(label, 1+j, 1+j+1, 1+i, 1+i+1) # also skip first index column
                 flagsRow.append(label)
             self.flags.append(flagsRow)
         self.wTree.get_object("flagsFrame").show_all()
@@ -1095,97 +1106,128 @@ class SchunkTextControl:
    
 
     def update_flags(self, *args):
-        if (len(self.roscomms.currentJointStates.position) == self.numModules) and (len(self.roscomms.currentSchunkStatus.joints) == self.numModules):
-            for i in range(self.numModules):
-                label = self.flags[i][self.flagsDict["Position"]]
-                flagRadians = self.roscomms.currentJointStates.position[i]            
+        for module_i in range(self.numModules):
+            # find index of current module in msg currentJointStates
+            msg_i = -1
+            for names_i in range(len(self.roscomms.currentJointStates.name)):
+                if self.roscomms.joint_list[module_i] == self.roscomms.currentJointStates.name[names_i]:
+                    msg_i = names_i
+                    break
+            
+            # if found..
+            if msg_i != -1:
+                label = self.flags[module_i][self.flagsDict["Position"]]
+                flagRadians = self.roscomms.currentJointStates.position[msg_i]            
                 flag = flagRadians * 180 / pi
                 if (flag < 0.05) and (flag > -0.05):
                     flag = 0.0            
-                string = "%.2f / %.2f" % (flag, flagRadians)
+                string = "%.2f / %.3f" % (flag, flagRadians)
                 label.set_text(string)
                 #flag = round(flag, 2)
                 #label.set_text(str(flag))
-                
-                label = self.flags[i][self.flagsDict["Referenced"]]
-                flag = self.roscomms.currentSchunkStatus.joints[i].referenced
+            else:
+                self.wTree.get_object("status").set_text("Error: Joint '"+self.roscomms.joint_list[module_i]+"' not found in joint state message!")
+                self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
+            
+            # find index of current module in msg currentSchunkStatus
+            msg_i = -1
+            for names_i in range(len(self.roscomms.currentSchunkStatus.joints)):
+                if self.roscomms.joint_list[module_i] == self.roscomms.currentSchunkStatus.joints[names_i].jointName:
+                    msg_i = names_i
+                    break
+            
+            # if found..
+            if msg_i != -1:
+                label = self.flags[module_i][self.flagsDict["Referenced"]]
+                flag = self.roscomms.currentSchunkStatus.joints[msg_i].referenced
                 label.set_text(str(flag))
                 if not flag:
                     label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
                 else:
                     label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#000000'))
                     
-                label = self.flags[i][self.flagsDict["MoveEnd"]]
-                flag = self.roscomms.currentSchunkStatus.joints[i].moveEnd
+                label = self.flags[module_i][self.flagsDict["MoveEnd"]]
+                flag = self.roscomms.currentSchunkStatus.joints[msg_i].moveEnd
                 label.set_text(str(flag))
                 if not flag:
                     label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
                 else:
                     label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#000000'))
-    
-                label = self.flags[i][self.flagsDict["Brake"]]
-                flag = self.roscomms.currentSchunkStatus.joints[i].brake
+
+                label = self.flags[module_i][self.flagsDict["Brake"]]
+                flag = self.roscomms.currentSchunkStatus.joints[msg_i].brake
                 label.set_text(str(flag))
                 if not flag:
                     label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
                 else:
                     label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#000000'))
-    
-    
-                label = self.flags[i][self.flagsDict["Warning"]]
-                flag = self.roscomms.currentSchunkStatus.joints[i].warning
+
+
+                label = self.flags[module_i][self.flagsDict["Warning"]]
+                flag = self.roscomms.currentSchunkStatus.joints[msg_i].warning
                 label.set_text(str(flag))
                 if flag:
                     label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
                 else:
                     label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#000000'))
-    
-                label = self.flags[i][self.flagsDict["Current"]]
-                flag = self.roscomms.currentSchunkStatus.joints[i].current
+
+                label = self.flags[module_i][self.flagsDict["Current"]]
+                flag = self.roscomms.currentSchunkStatus.joints[msg_i].current
                 string = "%.2f" % flag
                 label.set_text(string)
                 #flag = round(flag,2)
                 #label.set_text(str(flag))
-    
-                label = self.flags[i][self.flagsDict["Moving"]]
-                flag = self.roscomms.currentSchunkStatus.joints[i].moving
+
+                label = self.flags[module_i][self.flagsDict["Moving"]]
+                flag = self.roscomms.currentSchunkStatus.joints[msg_i].moving
                 label.set_text(str(flag))
                 if flag:
                     label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
                 else:
                     label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#000000'))
-    
-                label = self.flags[i][self.flagsDict["PosReached"]]
-                flag = self.roscomms.currentSchunkStatus.joints[i].posReached
+
+                label = self.flags[module_i][self.flagsDict["PosReached"]]
+                flag = self.roscomms.currentSchunkStatus.joints[msg_i].posReached
                 label.set_text(str(flag))
                 if not flag:
                     label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
                 else:
                     label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#000000'))
      
-                label = self.flags[i][self.flagsDict["Error"]]
-                flag = self.roscomms.currentSchunkStatus.joints[i].error
+                label = self.flags[module_i][self.flagsDict["Error"]]
+                flag = self.roscomms.currentSchunkStatus.joints[msg_i].error
                 label.set_text(str(flag))
                 if flag:
                     label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
                 else:
                     label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#000000'))
                     
-                label = self.flags[i][self.flagsDict["ErrorCode"]]
-                flag = self.roscomms.currentSchunkStatus.joints[i].errorCode
+                label = self.flags[module_i][self.flagsDict["ErrorCode"]]
+                flag = self.roscomms.currentSchunkStatus.joints[msg_i].errorCode
                 label.set_text(str(flag))
                 if flag != 0:
                     label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
                 else:
-                    label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#000000'))           
-
+                    label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#000000'))
+            else:
+                self.wTree.get_object("status").set_text("Error: Joint '"+self.roscomms.joint_list[module_i]+"' not found in schunk status message!")
+                self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
+            
         return True
 
 
     def on_buttonCopyCurrent_clicked(self, widget):
-        if (len(self.roscomms.currentJointStates.position) == self.numModules) and (len(self.roscomms.currentSchunkStatus.joints) == self.numModules):
-            for i in range(self.numModules):
-                flagRadians = float(self.roscomms.currentJointStates.position[i])
+        for module_i in range(self.numModules):
+            # find index of current module in msg currentJointStates
+            msg_i = -1
+            for names_i in range(len(self.roscomms.currentJointStates.name)):
+                if self.roscomms.joint_list[module_i] == self.roscomms.currentJointStates.name[names_i]:
+                    msg_i = names_i
+                    break
+            
+            # if found..
+            if msg_i != -1:
+                flagRadians = float(self.roscomms.currentJointStates.position[msg_i])
                 if self.inDegrees:
                     flag = flagRadians * 180 / pi
                     if (flag < 0.05) and (flag > -0.05):
@@ -1195,10 +1237,13 @@ class SchunkTextControl:
 #                    flag = float(string)
 # or
 #                    flag = round(flag, 4)
-                    self.posesframe_spinButtons[i].set_value(flag)
+                    self.posesframe_spinButtons[module_i].set_value(flag)
                 else:
 #                    flagRadians = round(flagRadians, 4)
-                    self.posesframe_spinButtons[i].set_value(flagRadians)
+                    self.posesframe_spinButtons[module_i].set_value(flagRadians)
+            else:
+                self.wTree.get_object("status").set_text("Error: Joint '"+self.roscomms.joint_list[module_i]+"' not found in joint state message!")
+                self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
         pass
 
 
