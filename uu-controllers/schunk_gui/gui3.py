@@ -66,6 +66,9 @@ class RosCommunication():
                 jtype = child.getAttribute('type')
                 if jtype == 'fixed':
                     continue
+                if name in self.dependent_joints or len(child.getElementsByTagName('mimic')) != 0:
+                    continue
+                    
                 # encoding needed for most lookups like "self.roscomms.joint_list[module]"
                 name = child.getAttribute('name').encode('ascii')
                 if jtype == 'continuous':
@@ -76,17 +79,16 @@ class RosCommunication():
                     minval = float(limit.getAttribute('lower'))
                     maxval = float(limit.getAttribute('upper'))
 
-                if name in self.dependent_joints:
-                    continue
+
                 if minval > 0 or maxval < 0:
                     zeroval = (maxval + minval)/2
                 else:
                     zeroval = 0
 
                 joint = {'min':minval, 'max':maxval, 'zero':zeroval, 'value':zeroval }
-                self.free_joints[name] = joint
-                self.joint_list.append(name)
-                self.joint_lookup[name] = self.numModules
+                self.free_joints[name] = joint				# store joint
+                self.joint_list.append(name)				# store joints name
+                self.joint_lookup[name] = self.numModules	# store index for joint
                 self.numModules += 1                
 
         # Setup all of the pubs and subs
