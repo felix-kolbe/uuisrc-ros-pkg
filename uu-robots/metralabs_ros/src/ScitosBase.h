@@ -23,17 +23,23 @@ class ScitosBase {
 	void set_velocity(double v, double w);
 	void loop();
 	
-	
+	template<typename FeatureType>
+	void setFeature(std::string name, FeatureType value);
+
+	template<typename FeatureType>
+	FeatureType getFeature(std::string name);
+
+
     private:
 	class OdometryCallbackHandler : public BlackboardDataUpdateCallback
 	{
 	    public:
 	    OdometryCallbackHandler(ScitosBase* base) : BlackboardDataUpdateCallback() {
-		m_base = base;
+	    	m_base = base;
 	    }
 	    
 	    void set_base(ScitosBase* base) {
-		m_base = base;
+	    	m_base = base;
 	    }
 
 	    ScitosBase* m_base;
@@ -41,19 +47,19 @@ class ScitosBase {
 	    private:
 	    // Implementation of BlackboardDataUpdateCallback
 	    void dataChanged(const BlackboardData* pData) {
-		const BlackboardDataOdometry* tOdometryData = dynamic_cast<const BlackboardDataOdometry*>(pData);
-		if (tOdometryData != NULL) {
-		MTime tTime;
-		Pose tPose;
-		Velocity tVelocity;
-		float tMileage;
+			const BlackboardDataOdometry* tOdometryData = dynamic_cast<const BlackboardDataOdometry*>(pData);
+			if (tOdometryData != NULL) {
+				MTime tTime;
+				Pose tPose;
+				Velocity tVelocity;
+				float tMileage;
 
-		tOdometryData->getData(tPose, tVelocity, tMileage);		
-		m_base->publish_odometry(tPose.getX(), tPose.getY(), tPose.getPhi(),
-				    tVelocity.getVelocityTranslational(),
-				    tVelocity.getVelocityRotational());	
+				tOdometryData->getData(tPose, tVelocity, tMileage);
+				m_base->publish_odometry(tPose.getX(), tPose.getY(), tPose.getPhi(),
+							tVelocity.getVelocityTranslational(),
+							tVelocity.getVelocityRotational());
 
-		}
+			}
 	    }
 	    
 
