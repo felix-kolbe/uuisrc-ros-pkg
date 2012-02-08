@@ -1,0 +1,10 @@
+<launch>
+
+<node name="$(anon schunk_gui)" pkg="schunk_gui" type="gui3.py" output="screen">
+	<remap from="schunk_description" to="robot_description"/>
+	<param name="tip_name" value="Gripper" />
+	<param name="root_name" value="base_link" />
+</node>
+
+
+</launch>
