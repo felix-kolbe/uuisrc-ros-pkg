@@ -1,0 +1,269 @@
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+
+
+
+ <joint name="DH_B_1" type="fixed">
+    <origin xyz="${schunk_base_offset_center} 0 ${scitos_height}" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child link="DH1"/>
+ </joint>
+ <joint name="DH_1_2" type="revolute">
+	<!-- ~center of base swivel joint ID20 -->
+    <!-- the ~center means: both z of this and below added must equal 0.268 -->
+    <origin xyz="0 0 0.120" rpy="0 0 0"/>
+    <parent link="DH1"/>
+    <child link="DH2"/>
+    <axis xyz="0 0 -1" />
+    <limit lower="-3.141593" upper="3.141593" effort="2" velocity="${max_vel}" />
+ </joint>
+ <joint name="DH_2_3" type="revolute">
+	<!-- center of first pitch joint ID21 -->
+    <origin xyz="0 0 0.148" rpy="${0.25*tau} ${-0.25*tau} ${0.5*tau}"/>
+    <parent link="DH2"/>
+    <child link="DH3"/>
+    <axis xyz="0 0 -1" />
+    <limit lower="-2.024580" upper="2.024580" effort="2" velocity="${max_vel}" />
+ </joint>
+ <joint name="DH_3_4" type="revolute">
+    <!-- center of second pitch joint ID22 -->
+    <origin xyz="0.400 0 0" rpy="${0.5*tau} 0 0"/>
+    <parent link="DH3"/>
+    <child link="DH4"/>
+    <axis xyz="0 0 -1" />
+    <limit lower="-2.740166" upper="2.740166" effort="2" velocity="${max_vel}" />
+ </joint>
+ <joint name="DH_4_5" type="revolute">
+	<!-- center of third pitch joint ID23 -->
+    <origin xyz="0.300 0 0" rpy="${0.5*tau} 0 0"/>
+    <parent link="DH4"/>
+    <child link="DH5"/>
+    <axis xyz="0 0 -1" />
+    <limit lower="-2.373644" upper="2.286380" effort="2" velocity="${max_vel}" />
+ </joint>
+ <joint name="DH_5_6" type="revolute">
+	<!-- center of hand roll joint ID24 -->
+    <origin xyz="0.107 0 0" rpy="0 ${0.25*tau} 0"/>
+    <parent link="DH5"/>
+    <child link="DH6"/>
+    <axis xyz="0 0 -1" />
+    <limit lower="-3.143321" upper="3.143321" effort="2" velocity="${max_vel}" />
+ </joint>
+ <joint name="DH_6_GR" type="fixed">
+    <origin xyz="0 0 0.110" rpy="0 ${-0.25*tau} 0"/>
+    <parent link="DH6"/>
+    <child link="Gripper"/>
+ </joint>
+
+ <joint name="GR_Fpos" type="prismatic">
+    <origin xyz="0 0 0" rpy="${0.5*tau} 0 0"/>
+    <parent link="GFneg"/>
+    <child link="GFpos"/>
+    <axis xyz="0 0 1" />
+    <limit lower="-0.000250" upper="0.068111" effort="2" velocity="0.08" />
+ </joint>
+
+ <joint name="GR_Fneg" type="prismatic">
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <parent link="Gripper"/>
+    <child link="GFneg"/>
+    <axis xyz="0 0 1" />
+    <limit lower="-0.000250" upper="0.068111" effort="2" velocity="0.08" />
+    <mimic joint="GR_Fpos" multiplier="0.5" offset="0"/>
+ </joint>
+
+<!-- Backup: rechtsdrehende Gelenke
+ <joint name="DH_B_1" type="fixed">
+    <origin xyz="0 0 0.700" rpy="0 0 0"/>
+    <parent link="ScitosBase"/>
+    <child link="DH1"/>
+    <axis xyz="0 0 1" />
+    <limit lower="-3.0543" upper="3.0543" effort="2" velocity="${max_vel}" />
+ </joint>
+ <joint name="DH_1_2" type="revolute">
+    <origin xyz="0 0 0.060" rpy="0 0 ${0.5*tau}"/>
+    <parent link="DH1"/>
+    <child link="DH2"/>
+    <axis xyz="0 0 1" />
+    <limit lower="-3.0543" upper="3.0543" effort="2" velocity="${max_vel}" />
+ </joint>
+ <joint name="DH_2_3" type="revolute">
+    <origin xyz="0 0 0.208" rpy="${0.25*tau} ${-0.25*tau} ${0.5*tau}"/>
+    <parent link="DH2"/>
+    <child link="DH3"/>
+    <axis xyz="0 0 1" />
+    <limit lower="-3.0543" upper="3.0543" effort="2" velocity="${max_vel}" />
+ </joint>
+ <joint name="DH_3_4" type="revolute">
+    <origin xyz="0.400 0 0" rpy="${0.5*tau} 0 0"/>
+    <parent link="DH3"/>
+    <child link="DH4"/>
+    <axis xyz="0 0 1" />
+    <limit lower="-3.0543" upper="3.0543" effort="2" velocity="${max_vel}" />
+ </joint>
+ <joint name="DH_4_5" type="revolute">
+    <origin xyz="0.300 0 0" rpy="${0.5*tau} 0 0"/>
+    <parent link="DH4"/>
+    <child link="DH5"/>
+    <axis xyz="0 0 1" />
+    <limit lower="-3.0543" upper="3.0543" effort="2" velocity="${max_vel}" />
+ </joint>
+ <joint name="DH_5_6" type="revolute">
+    <origin xyz="0.200 0 0" rpy="0 ${0.25*tau} 0"/>
+    <parent link="DH5"/>
+    <child link="DH6"/>
+    <axis xyz="0 0 1" />
+    <limit lower="-3.0543" upper="3.0543" effort="2" velocity="${max_vel}" />
+ </joint>
+-->
+<!-- Backup: alle Koordinatensysteme gleich ausgerichtet: 
+ <joint name="DH_2_3" type="revolute">
+    <origin xyz="0 0 0.268" rpy="0 0 0"/>
+    <parent link="DH2"/>
+    <child link="DH3"/>
+    <axis xyz="0 1 0" />
+    <limit lower="-3.0543" upper="3.0543" effort="2" velocity="${max_vel}" />
+ </joint>
+ <joint name="DH_3_4" type="revolute">
+    <origin xyz="0 0 0.400" rpy="0 0 ${0.5*tau}"/>
+    <parent link="DH3"/>
+    <child link="DH4"/>
+    <axis xyz="0 1 0" />
+    <limit lower="-3.0543" upper="3.0543" effort="2" velocity="${max_vel}" />
+ </joint>
+ <joint name="DH_4_5" type="revolute">
+    <origin xyz="0 0 0.300" rpy="0 0 ${0.5*tau}"/>
+    <parent link="DH4"/>
+    <child link="DH5"/>
+    <axis xyz="0 1 0" />
+    <limit lower="-3.0543" upper="3.0543" effort="2" velocity="${max_vel}" />
+ </joint>
+ <joint name="DH_5_6" type="revolute">
+    <origin xyz="0 0 0.200" rpy="0 0 0"/>
+    <parent link="DH5"/>
+    <child link="DH6"/>
+    <axis xyz="0 0 1" />
+    <limit lower="-3.0543" upper="3.0543" effort="2" velocity="${max_vel}" />
+ </joint>
+-->
+
+<!--
+ <joint name="Base_ConnBase" type="fixed">
+    <origin xyz="0 0 0.75" rpy="0 0 ${0.5*tau}"/>
+    <parent link="ScitosBase"/>
+    <child link="ConnBase"/>
+ </joint>
+
+ <joint name="ConnBase_J1" type="fixed">
+    <origin xyz="0 0 0.060" rpy="0 0 0"/>
+    <parent link="ConnBase"/>
+    <child link="J1"/>
+ </joint>
+
+ <joint name="J1_Conn1" type="revolute">
+    <origin xyz="0 0 0.180" rpy="${0.25*tau} 0 0"/>
+    <parent link="J1"/>
+    <child link="Conn1"/>
+    <limit lower="-3.0543" upper="3.0543" effort="2" velocity="${max_vel}" />
+    <axis xyz="0 0 1" />
+ </joint>
+ 
+ <joint name="Conn1_J2" type="fixed">
+    <origin xyz="0 0 0.0725" rpy="0 0 0"/>
+    <parent link="Conn1"/>
+    <child link="J2"/>
+ </joint>
+
+ <joint name="J2_Conn2" type="revolute">
+    <origin xyz="0 0 0.0725" rpy="0 0 0"/>
+    <parent link="J2"/>
+    <child link="Conn2"/>
+    <limit lower="-3.0543" upper="3.0543" effort="2" velocity="${max_vel}" />
+    <axis xyz="0 0 1" />
+ </joint>
+-->
+<!--
+  <joint name="Fixed_C" type="fixed">
+    <origin xyz="0 0 0.0675" rpy="0 0 0"/>
+    <parent link="PAM102"/>
+    <child link="P90_2_LowerCube"/>
+ </joint>
+-->
+<!--
+
+ <joint name="Joint1" type="revolute">
+    <origin xyz="0 0.09 0" rpy="0 0 0"/>
+    <parent link="P90_2_LowerCube"/>
+    <child link="P90_2_UpperCube"/>
+    <limit lower="-2.0071" upper="2.0071" effort="2" velocity="${max_vel}" />
+    <axis xyz="0 1 0" />
+ </joint>
+ 
+ <joint name="Fixed_D" type="fixed">
+    <origin xyz="0 -0.00025 0.106" rpy="0 0 0"/>
+    <parent link="P90_2_UpperCube"/>
+    <child link="PAM121"/>
+ </joint>
+ 
+ <joint name="Fixed_E" type="fixed">
+    <origin xyz="0 -0.09025 0.016" rpy="0 0 0"/>
+    <parent link="PAM121"/>
+    <child link="P90_3_LowerCube"/>
+ </joint>
+ 
+ <joint name="Joint2" type="revolute">
+    <origin xyz="0 0 0.09 " rpy="0 0 0"/>
+    <parent link="P90_3_LowerCube"/>
+    <child link="P90_3_UpperCube"/>
+    <limit lower="-2.8099" upper="2.8099" effort="2" velocity="${max_vel}" />
+    <axis xyz="0 0 1" />
+ </joint>
+ 
+ <joint name="Fixed_F" type="fixed">
+    <origin xyz="0 0 0.0675" rpy="0 0 0"/>
+    <parent link="P90_3_UpperCube"/>
+    <child link="PAM110"/>
+ </joint>
+ 
+ 
+ <joint name="Fixed_G" type="fixed">
+    <origin xyz="0 0 0.0575" rpy="0 0 0"/>
+    <parent link="PAM110"/>
+    <child link="P70_1_LowerCube"/>
+ </joint>
+ 
+ <joint name="Joint3" type="revolute">
+    <origin xyz="0 -0.07 0 " rpy="0 0 0"/>
+    <parent link="P70_1_LowerCube"/>
+    <child link="P70_1_UpperCube"/>
+    <limit lower="-0.78539816339744828" upper="2.007" effort="2" velocity="${max_vel}" />
+    <axis xyz="0 -1 0" />
+ </joint>
+ 
+ <joint name="Fixed_H" type="fixed">
+    <origin xyz="0 -0.00025 0.084" rpy="0 0 0"/>
+    <parent link="P70_1_UpperCube"/>
+    <child link="PAM120"/>
+ </joint>
+ 
+ <joint name="Fixed_I" type="fixed">
+    <origin xyz="0 0.07025 0.014" rpy="0 0 0"/>
+    <parent link="PAM120"/>
+    <child link="P70_2_LowerCube"/>
+ </joint>
+ 
+
+ <joint name="Joint4" type="revolute">
+    <origin xyz="0  0 0.07" rpy="0 0 0"/>
+    <parent link="P70_2_LowerCube"/>
+    <child link="P70_2_UpperCube"/>
+    <limit lower="-2.8099" upper="2.8099" effort="2" velocity="${max_vel}" />
+    <axis xyz="0 0 1" />
+ </joint>
+ 
+ <joint name="Fixed_J" type="fixed">
+    <origin xyz="0 0 0.0525" rpy="0 0 0"/>
+    <parent link="P70_2_UpperCube"/>
+    <child link="PAM100"/>
+ </joint>
+-->
+</robot>

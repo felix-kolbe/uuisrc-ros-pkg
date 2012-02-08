@@ -1,0 +1,47 @@
+digraph G {
+node [shape=box];
+"base_link" [label="base_link"];
+"DH1" [label="DH1"];
+"ConnBase" [label="ConnBase"];
+"DH2" [label="DH2"];
+"DH3" [label="DH3"];
+"ConnLong1" [label="ConnLong1"];
+"DH4" [label="DH4"];
+"ConnLong2" [label="ConnLong2"];
+"DH5" [label="DH5"];
+"DH6" [label="DH6"];
+"Gripper" [label="Gripper"];
+"GFneg" [label="GFneg"];
+"GFpos" [label="GFpos"];
+"CameraMount" [label="CameraMount"];
+"tail" [label="tail"];
+node [shape=ellipse, color=blue, fontcolor=blue];
+"base_link" -> "DH_B_1" [label="xyz: -0.075 0 0.583 \nrpy: 0 -0 0"]
+"DH_B_1" -> "DH1"
+"DH1" -> "DH1_ConnBase" [label="xyz: 0 0 0 \nrpy: 0 -0 0"]
+"DH1_ConnBase" -> "ConnBase"
+"DH1" -> "DH_1_2" [label="xyz: 0 0 0.12 \nrpy: 0 -0 0"]
+"DH_1_2" -> "DH2"
+"DH2" -> "DH_2_3" [label="xyz: 0 0 0.148 \nrpy: 1.5708 -1.5708 3.14159"]
+"DH_2_3" -> "DH3"
+"DH3" -> "DH3_ConnLong1" [label="xyz: 0 0 0 \nrpy: 0 -0 0"]
+"DH3_ConnLong1" -> "ConnLong1"
+"DH3" -> "DH_3_4" [label="xyz: 0.4 0 0 \nrpy: -3.14159 -0 0"]
+"DH_3_4" -> "DH4"
+"DH4" -> "DH4_ConnLong2" [label="xyz: 0 0 0 \nrpy: 0 -0 0"]
+"DH4_ConnLong2" -> "ConnLong2"
+"DH4" -> "DH_4_5" [label="xyz: 0.3 0 0 \nrpy: -3.14159 -0 0"]
+"DH_4_5" -> "DH5"
+"DH5" -> "DH_5_6" [label="xyz: 0.107 0 0 \nrpy: 0 1.5708 0"]
+"DH_5_6" -> "DH6"
+"DH6" -> "DH_6_GR" [label="xyz: 0 0 0.11 \nrpy: 0 -1.5708 0"]
+"DH_6_GR" -> "Gripper"
+"Gripper" -> "GR_Fneg" [label="xyz: 0 0 0 \nrpy: 0 -0 0"]
+"GR_Fneg" -> "GFneg"
+"GFneg" -> "GR_Fpos" [label="xyz: 0 0 0 \nrpy: -3.14159 -0 0"]
+"GR_Fpos" -> "GFpos"
+"Gripper" -> "Gripper_CameraMount" [label="xyz: -0.02 -0.055 0 \nrpy: 0 -0 0"]
+"Gripper_CameraMount" -> "CameraMount"
+"base_link" -> "base_link_tail" [label="xyz: -0.375 0 0.1 \nrpy: 0 -0 0"]
+"base_link_tail" -> "tail"
+}

@@ -1,0 +1,70 @@
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+
+
+<!-- Properties -->
+
+<!--mathematical-->
+<xacro:property name="tau" value="6.283185307179586" /><!-- circle constant -->
+<xacro:property name="pi" value="3.1415926535897931" /><!-- for legacy: pi = tau/2 -->
+
+<!--physical-->
+<xacro:property name="scitos_width" value="0.617" />
+<xacro:property name="scitos_height" value="0.583" />
+<xacro:property name="gripper_space" value="0.068" /><!--0-68 mm-->
+<xacro:property name="schunk_base_offset_front" value="0.040" /><!--arm mounted in front position-->
+<xacro:property name="schunk_base_offset_center" value="-0.075" /><!--arm mounted in center position-->
+<xacro:property name="schunk_base_offset_rear" value="-0.252" /><!--arm mounted in rear position-->
+
+<!--restraint-->
+<xacro:property name="max_vel" value="0.43" /> <!--abgerundete geschwindigkeit des langsamsten gelenks-->
+
+ <!--quark: 2.88r/s ~= 16°/s was etwa die Hälfte der mittleren Maximalgeschwindigkeit der Drehgelenke ist... halt moment, 2.88 muss Quark sein.. -->
+
+
+
+<!-- Materials -->
+
+<material name="black">
+    <color rgba="0 0 0 1"/>
+</material>
+
+<material name="gray">
+    <color rgba="0.15 0.15 0.15 1"/>
+</material>
+
+<material name="golden">
+    <color rgba="0.62 0.57 0.06 1"/>
+</material>
+
+<material name="scitosblue">
+    <color rgba=".0 .0 .4 0.7" />
+</material>
+
+<material name="aluminium">
+    <color rgba=".75 .75 .75 1" />
+</material>
+
+<material name="yellow">
+    <color rgba="1 0.94 0.14 1"/>
+</material>
+
+
+<!-- Joint macros -->
+
+<xacro:macro name="connect" params="parent child">
+    <xacro:connect_xyz parent="${parent}" child="${child}" xyz="0 0 0"/>
+</xacro:macro>
+
+<xacro:macro name="connect_xyz" params="parent child xyz">
+    <xacro:connect_xyz_rpy parent="${parent}" child="${child}" xyz="${xyz}" rpy="0 0 0"/>
+</xacro:macro>
+
+<xacro:macro name="connect_xyz_rpy" params="parent child xyz rpy">
+    <joint name="${parent}_${child}" type="fixed">
+        <origin xyz="${xyz}" rpy="${rpy}" />
+        <parent link="${parent}"/>
+        <child link="${child}"/>
+    </joint>
+</xacro:macro>
+
+</robot>

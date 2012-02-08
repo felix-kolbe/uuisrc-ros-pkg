@@ -1,0 +1,51 @@
+<robot name="scitos_haw_only" xmlns:xacro="http://ros.org/wiki/xacro">
+
+<include filename="$(find metralabs_ros)/Models/xacro/scitos_haw_properties.xacro" />
+
+
+<link name="base_link"><!--Odometry origin, former called ScitosBase -->
+  <visual>
+    <origin xyz="-0.075 0 0.29" rpy="0 0 0" />
+    <geometry>
+      <cylinder radius="${scitos_width/2}" length="${scitos_height}" />
+    </geometry>
+    <material name="scitosblue"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.075 0 ${0.29 + 0.1/2}" rpy="0 0 0" />
+    <geometry>
+      <cylinder radius="${scitos_width*1.2/2}" length="${scitos_height+0.1}" />
+    </geometry>
+  </collision>
+</link>
+
+<link name="tail">
+  <visual>
+    <geometry>
+      <cylinder radius="0.15" length="0.20" />
+    </geometry>
+    <material name="scitosblue"/>
+  </visual>
+  <collision>
+    <geometry>
+      <cylinder radius="0.25" length="0.30" />
+    </geometry>
+  </collision>
+</link>
+<xacro:connect_xyz parent="base_link" child="tail" xyz="${-0.075-0.30} 0 0.10"/>
+
+<!-- Laserscanner, no effect beside nice to see -->
+<!--
+<link name="Laserscanner">      
+  <visual>
+    <origin xyz="${0.109+0.120/2} 0 ${0.326+0.120/2}"/>
+    <geometry>
+        <box size="0.120 0.120 0.120" />
+    </geometry>
+    <material name="yellow"/>
+  </visual>
+</link>
+<xacro:connect parent="ScitosBase" child="Laserscanner"/>
+-->
+
+</robot>

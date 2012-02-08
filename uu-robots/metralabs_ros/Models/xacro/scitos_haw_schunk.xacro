@@ -1,0 +1,71 @@
+<robot name="scitos_haw_schunk" xmlns:xacro="http://ros.org/wiki/xacro">
+
+<!-- Scitos and properties -->
+<include filename="$(find metralabs_ros)/Models/xacro/scitos_haw_only.xacro" />
+
+<!-- Links macros -->
+<include filename="$(find metralabs_ros)/Models/xacro/scitos_haw_schunk_links.xacro" />
+<!-- Joints macros -->
+<include filename="$(find metralabs_ros)/Models/xacro/scitos_haw_schunk_joints.xacro" />
+
+
+<xacro:DH  name="DH1"/><!-- base of arm -->
+<xacro:PRL name="DH2" type="100"/><!-- ~center of base swivel joint ID20 -->
+<xacro:PRL name="DH3" type="100"/><!-- center of first pitch joint ID21 -->
+<xacro:PRL name="DH4" type="100"/><!-- center of second pitch joint ID22 -->
+<xacro:PRL name="DH5" type="80"/><!-- center of third pitch joint ID23 -->
+<xacro:PRL name="DH6" type="60"/><!-- center of hand roll joint ID24 -->
+
+
+<xacro:Connector name="ConnBase" >
+    <cylinder radius="0.080" length="0.060" /> <!--values ok--> 
+</xacro:Connector>
+<xacro:connect parent="DH1" child="ConnBase"/>
+
+
+<xacro:Connector_long name="ConnLong1" length="400"/>
+<xacro:Connector_long name="ConnLong2" length="300"/>
+<xacro:connect parent="DH3" child="ConnLong1"/>
+<xacro:connect parent="DH4" child="ConnLong2"/>
+
+
+<link name="Gripper">
+  <visual>
+    <origin xyz="0 0 0" rpy="0 0 0" />
+    <geometry>
+        <box size="0.090 0.080 0.112" />
+    </geometry>
+    <material name="golden"/>
+  </visual>
+  <collision>
+    <origin xyz="0.040 0 0"/>
+    <geometry>
+        <box size="0.185 0.100 0.132" />
+    </geometry>
+  </collision>
+</link>
+
+<xacro:GripperFinger name="GFpos" reflect="1"/>
+<!--<xacro:connect parent="Gripper" child="GFpos"/>-->
+<xacro:GripperFinger name="GFneg" reflect="-1"/>
+<!--<xacro:connect parent="Gripper" child="GFneg"/>-->
+
+<link name="CameraMount">
+  <visual>
+    <geometry>
+        <box size="0.075 0.020 0.055" /><!-- Werte aufrundend vermessen -->
+    </geometry>
+    <material name="black"/>
+  </visual>
+  <collision>
+    <geometry>
+        <box size="0.090 0.030 0.070" />
+    </geometry>
+  </collision>
+</link>
+<xacro:connect_xyz parent="Gripper" child="CameraMount" xyz="-0.020 -0.055 0"/><!-- Werte grob vermessen/berechnet -->
+
+
+
+
+</robot>
