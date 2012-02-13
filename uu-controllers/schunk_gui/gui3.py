@@ -545,7 +545,7 @@ class SchunkTextControl:
             filename = dialog.get_filename()
             reader = csv.reader(open(filename, "rb"))
             for row in reader:
-                for i in range(0,len(self.pose)):
+                for i in range(0, min(len(self.pose), len(row)) ):  # do not try to load more row items than joints, or more joints than row items
                     try:
                         self.pose[i] = float(row[i])
                     except:
