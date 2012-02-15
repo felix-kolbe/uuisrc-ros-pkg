@@ -30,6 +30,9 @@
 #define DEG_TO_RAD(d)	((d)*M_PI/180.0)
 #define RAD_TO_DEG(r)	((r)*180.0/M_PI)
 
+#define FEATURE_LASER	( "EBC0_Enable24V" )
+#define FEATURE_ARM		( "EBC1_Enable24V" )
+#define FEATURE_SONAR	( "SonarsActive" )
 
 class TrajectoryExecuter {
 
@@ -505,15 +508,29 @@ int main(int argc, char **argv)
 {
 	ros::init(argc, argv, "metralabs_ros");
 	ros::NodeHandle n;
+	ros::NodeHandle n_private("~");
 
+	bool disable_arm;
+	n_private.param("disable_arm", disable_arm, false);
+
+	ros::Duration(0.9).sleep(); // wait to let the running me close its scitos connection
+
+	ScitosBase base(//"/opt/MetraLabs/MLRobotic/etc/config/"
+//			"/home/demo/SCITOS-G5_without_Head_config.xml", argc, argv);
+			"/home/demo/SCITOS-G5_without_Head_config (low noise).xml", argc, argv);
+
+	if(!disable_arm) {
+		base.setFeature(FEATURE_ARM, true);
+		ros::Duration(0.3).sleep(); // let arm start up
+	}
+
+	RosScitosBase ros_scitos(n, &base);
 
 	SchunkServer server(n);
-	ScitosBase base("/opt/MetraLabs/MLRobotic/etc/config/SCITOS-G5_without_Head_config.xml", argc, argv);
-	RosScitosBase ros_scitos(n, &base);
 
 	/*
 	 * /schunk/position/joint_state -> publishes joint state for kinematics modules
-	 * /schunk/target_pc/joint_state -> for received position control commands
+	 * /schunk/target_pc/joint_state <- for received position control commands
 	 * /schunk/target_vc/joint_state  <- for receiving velocity control commands
 	 * /schunk/status -> to publish all the statuses
 	 */
@@ -557,6 +574,8 @@ int main(int argc, char **argv)
 		loop_rate.sleep();
 
 	}
+
+    base.setFeature(FEATURE_ARM, false);
 
 	return 0;
 }
