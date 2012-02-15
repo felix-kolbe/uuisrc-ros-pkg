@@ -15,9 +15,10 @@
 #include <metralabs_ros/idAndFloat.h>
 #include <metralabs_ros/SchunkStatus.h>
 
-#include <sensor_msgs/JointState.h>
 #include <nav_msgs/Odometry.h>
 #include <sensor_msgs/Range.h>
+#include <sensor_msgs/JointState.h>
+
 #include <geometry_msgs/TransformStamped.h>
 #include <trajectory_msgs/JointTrajectory.h>
 #include <trajectory_msgs/JointTrajectoryPoint.h>
@@ -221,7 +222,9 @@ public:
 		m_armModel.initParam("robot_description");
 		std::map<std::string, boost::shared_ptr<urdf::Joint> >::iterator mapElement;
 		for (mapElement = m_armModel.joints_.begin(); mapElement!=m_armModel.joints_.end(); mapElement++) {
-			if ((*mapElement).second.get()->type != urdf::Joint::FIXED)
+			ROS_DEBUG_STREAM("Joint: Name="<< (*mapElement).second.get()->name << " Mimic=" << (*mapElement).second.get()->mimic );
+			if ((*mapElement).second.get()->type != urdf::Joint::FIXED
+					&& (*mapElement).second.get()->mimic == 0)	// check if it's a virtual joint mimicing a physical
 				m_joints.push_back((*mapElement).second.get() ); // shared pointer mantaged?
 		}
 		ROS_INFO("URDF specifies %d non-fixed joints.", m_joints.size() );
@@ -233,8 +236,7 @@ public:
 		ROS_WARN("Didn't check that the modules in the description match modules in reality.");
 
 		// Set up the joint state publisher with the joint names
-		// This assumes that the joints are ordered on the robot in the same order as
-		// the URDF!!!
+		// This assumes that the joints are ordered on the robot in the same order as the URDF!!!
 		m_currentJointState.name.resize(m_joints.size());
 		m_currentJointState.position.resize(m_joints.size());
 		m_currentJointState.velocity.resize(m_joints.size());
@@ -464,9 +466,6 @@ class RosScitosBase {
 	    // The odometry position and velocities of the robot
 	    double x, y, th, vx, vth;
 	    m_base->get_odometry(x,y,th,vx,vth);
-	    
-	    //useless comment
-	    m_base->loop();
 	    
 	    ros::Time currentTime = ros::Time::now();
 	    // since all odometry is 6DOF we'll need a quaternion created from yaw
