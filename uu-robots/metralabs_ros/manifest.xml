@@ -2,27 +2,23 @@
   <description brief="metralabs_ros">
 
      An interface to the MetraLabs Scitos G5 mobile robot with a Schunk Manipulator.
-     
 
   </description>
-  <author>Yianni Gatsoulis and Chris Burbridge and Lorenzo Riano</author>
+  <author>Yianni Gatsoulis and Chris Burbridge and Lorenzo Riano and Felix Kolbe</author>
   <license>GPL</license>
-
   
-  <depend package="std_msgs"/>
   <depend package="roscpp"/>
   <depend package="rospy"/>
-  <depend package="sensor_msgs"/>
+
+  <depend package="tf"/>
   <depend package="urdf"/>
   
+  <depend package="std_msgs"/>
   <depend package="sensor_msgs"/>
-  <depend package="tf"/>
   <depend package="geometry_msgs"/>
+  
   <depend package="nav_msgs"/>
   <depend package="trajectory_msgs"/>
   <depend package="pr2_controllers_msgs"/>
 
-
 </package>
-
-

@@ -44,12 +44,12 @@ rosbuild_add_executable(ScitosServer src/ScitosServer.cpp src/PowerCube.cpp src/
 #rosbuild_add_executable(tester src/tester.cpp)
 #target_link_libraries(example ${PROJECT_NAME})
 
-target_link_libraries(ScitosServer MLRoboticRobot)
-target_link_libraries(ScitosServer MLRoboticBase)
 target_link_libraries(ScitosServer MetraLabsBase)
-target_link_libraries(ScitosServer MLRoboticHardwareSCHUNK)
-target_link_libraries(ScitosServer MLRoboticCAN)
-target_link_libraries(ScitosServer MLRoboticHardware)
-target_link_libraries(ScitosServer MLRoboticSCITOS)
+target_link_libraries(ScitosServer MLRoboticBase)
 target_link_libraries(ScitosServer MLRoboticSystem)
+target_link_libraries(ScitosServer MLRoboticCAN)
+target_link_libraries(ScitosServer MLRoboticRobot)
+target_link_libraries(ScitosServer MLRoboticSCITOS)
+target_link_libraries(ScitosServer MLRoboticHardware)
+target_link_libraries(ScitosServer MLRoboticHardwareSCHUNK)
 
