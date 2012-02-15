@@ -42,14 +42,14 @@
  </joint>
  <joint name="DH_5_6" type="revolute">
 	<!-- center of hand roll joint ID24 -->
-    <origin xyz="0.107 0 0" rpy="0 ${0.25*tau} 0"/>
+    <origin xyz="0.121 0 0" rpy="0 ${0.25*tau} 0"/>
     <parent link="DH5"/>
     <child link="DH6"/>
     <axis xyz="0 0 -1" />
     <limit lower="-3.143321" upper="3.143321" effort="2" velocity="${max_vel}" />
  </joint>
  <joint name="DH_6_GR" type="fixed">
-    <origin xyz="0 0 0.110" rpy="0 ${-0.25*tau} 0"/>
+    <origin xyz="0 0 0.130" rpy="0 ${-0.25*tau} 0"/>
     <parent link="DH6"/>
     <child link="Gripper"/>
  </joint>
@@ -63,7 +63,7 @@
  </joint>
 
  <joint name="GR_Fneg" type="prismatic">
-    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <origin xyz="0.047 0 0" rpy="0 0 0"/>
     <parent link="Gripper"/>
     <child link="GFneg"/>
     <axis xyz="0 0 1" />

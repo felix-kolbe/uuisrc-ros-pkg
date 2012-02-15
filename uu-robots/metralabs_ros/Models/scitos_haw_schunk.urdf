@@ -99,14 +99,14 @@
   </joint>
   <joint name="DH_5_6" type="revolute">
     <!-- center of hand roll joint ID24 -->
-    <origin rpy="0 1.57079632679 0" xyz="0.107 0 0"/>
+    <origin rpy="0 1.57079632679 0" xyz="0.121 0 0"/>
     <parent link="DH5"/>
     <child link="DH6"/>
     <axis xyz="0 0 -1"/>
     <limit effort="2" lower="-3.143321" upper="3.143321" velocity="0.43"/>
   </joint>
   <joint name="DH_6_GR" type="fixed">
-    <origin rpy="0 -1.57079632679 0" xyz="0 0 0.110"/>
+    <origin rpy="0 -1.57079632679 0" xyz="0 0 0.130"/>
     <parent link="DH6"/>
     <child link="Gripper"/>
   </joint>
@@ -118,7 +118,7 @@
     <limit effort="2" lower="-0.000250" upper="0.068111" velocity="0.08"/>
   </joint>
   <joint name="GR_Fneg" type="prismatic">
-    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <origin rpy="0 0 0" xyz="0.047 0 0"/>
     <parent link="Gripper"/>
     <child link="GFneg"/>
     <axis xyz="0 0 1"/>
@@ -281,7 +281,7 @@
   <link name="GFpos">
     <visual>
       <!--<origin xyz="${0.047+0.035} 0 ${reflect*(gripper_space+0.010)/2}"/>-->
-      <origin xyz="0.082 0 0.01"/>
+      <origin xyz="0.035 0 0.01"/>
       <!--offsets to set fingers ontop the gripper and beside the coordinate center-->
       <geometry>
         <box size="0.070 0.030 0.020"/>
@@ -294,7 +294,7 @@
   <link name="GFneg">
     <visual>
       <!--<origin xyz="${0.047+0.035} 0 ${reflect*(gripper_space+0.010)/2}"/>-->
-      <origin xyz="0.082 0 0.01"/>
+      <origin xyz="0.035 0 0.01"/>
       <!--offsets to set fingers ontop the gripper and beside the coordinate center-->
       <geometry>
         <box size="0.070 0.030 0.020"/>
@@ -306,23 +306,44 @@
   <!--<xacro:connect parent="Gripper" child="GFneg"/>-->
   <link name="CameraMount">
     <visual>
+      <origin rpy="0 0 0" xyz="-0.0085 0 -0.003210"/>
       <geometry>
-        <box size="0.075 0.020 0.055"/>
-        <!-- Werte aufrundend vermessen -->
+        <box size="0.073 0.051 0.025"/>
+        <!-- Werte vermessen -->
       </geometry>
       <material name="black"/>
     </visual>
     <collision>
       <geometry>
-        <box size="0.090 0.030 0.070"/>
+        <box size="0.090 0.070  0.030"/>
       </geometry>
     </collision>
   </link>
   <joint name="Gripper_CameraMount" type="fixed">
-    <origin rpy="0 0 0" xyz="-0.020 -0.055 0"/>
+    <origin rpy="1.57079632679 0 0" xyz="-0.011 -0.055 0"/>
     <parent link="Gripper"/>
     <child link="CameraMount"/>
   </joint>
-  <!-- Werte grob vermessen/berechnet -->
+  <!-- Werte berechnet -->
+  <link name="Kinect">
+    <visual>
+      <geometry>
+        <box size="0.06 0.28 0.04"/>
+        <!-- Werte auf cm vermessen -->
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="0.08 0.30 0.06"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="CameraMount_Kinect" type="fixed">
+    <origin rpy="0 0 0" xyz="-0.015 0 0.04"/>
+    <parent link="CameraMount"/>
+    <child link="Kinect"/>
+  </joint>
+  <!-- Werte auf cm vermessen -->
 </robot>
 

@@ -77,7 +77,7 @@ TODO: remove macro? or disable collision in another way
 <link name="${name}" >
     <visual>
     <!--<origin xyz="${0.047+0.035} 0 ${reflect*(gripper_space+0.010)/2}"/>-->
-        <origin xyz="${0.047+0.035} 0 ${1*0.020/2}"/> <!--offsets to set fingers ontop the gripper and beside the coordinate center-->
+        <origin xyz="${0.035} 0 ${1*0.020/2}"/> <!--offsets to set fingers ontop the gripper and beside the coordinate center-->
         <geometry>
             <box size="0.070 0.030 0.020"/> <!--real finger size-->
         </geometry>
