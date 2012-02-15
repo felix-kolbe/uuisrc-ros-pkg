@@ -19,6 +19,11 @@ class ScitosBase {
 	
 	void publish_odometry(double x, double y, double theta, double v, double w);
 	void get_odometry(double& x, double& y, double& theta, double& v, double& w);
+
+	void publish_sonar(std::vector<RangeData::Measurement> measurements);
+	void get_sonar(std::vector<RangeData::Measurement>& measurements);
+	void publish_sonar_config(const RangeData::Config* sonarConfig);
+	void get_sonar_config(const RangeData::Config*& sonarConfig);
 	
 	void set_velocity(double v, double w);
 	void loop();
@@ -41,8 +46,6 @@ class ScitosBase {
 	    void set_base(ScitosBase* base) {
 	    	m_base = base;
 	    }
-
-	    ScitosBase* m_base;
 		
 	    private:
 	    // Implementation of BlackboardDataUpdateCallback
@@ -62,7 +65,41 @@ class ScitosBase {
 			}
 	    }
 	    
+	    ScitosBase* m_base;
+	};
 
+    private:
+	class SonarCallbackHandler : public BlackboardDataUpdateCallback
+	{
+	    public:
+		SonarCallbackHandler(ScitosBase* base) : BlackboardDataUpdateCallback() {
+	    	m_base = base;
+	    }
+	    
+	    void set_base(ScitosBase* base) {
+	    	m_base = base;
+	    }
+
+	    private:
+	    // Implementation of BlackboardDataUpdateCallback
+	    void dataChanged(const BlackboardData* pData) {
+			const BlackboardDataRange* tSonarData = dynamic_cast<const BlackboardDataRange*>(pData);
+			if (tSonarData != NULL) {
+				MTime tTime;
+				const RangeData::Vector& tRangeData = tSonarData->getRangeData();
+
+				const std::vector<RangeData::Measurement> tRangeMeasurements = tRangeData;
+
+//				const RangeData::Config* mSonarConfig = tSonarData->getConfig();
+//
+//				RangeData::Config* mSonarConfig = tSonarData->getConfig();
+
+				m_base->publish_sonar(tRangeMeasurements);
+				m_base->publish_sonar_config(tSonarData->getConfig());
+			}
+	    }
+
+	    ScitosBase* m_base;
 	};
 
     private:
@@ -72,7 +109,9 @@ class ScitosBase {
 	Robot* tRobot;
 	BlackboardDataOdometry* tOdometryData;
 	BlackboardDataVelocity* tVelocityData;
+	BlackboardDataRange* tSonarData;
 	OdometryCallbackHandler tOdometryHandler;
+	SonarCallbackHandler tSonarHandler;
 	
 	double m_x;
 	double m_y;
@@ -83,6 +122,8 @@ class ScitosBase {
 	double m_command_v;
 	double m_command_w;
 
+	std::vector<RangeData::Measurement> mRangeMeasurements;
+	const RangeData::Config* mSonarConfig;
 
 
 };

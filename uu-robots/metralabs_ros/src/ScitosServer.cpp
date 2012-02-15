@@ -17,10 +17,14 @@
 
 #include <sensor_msgs/JointState.h>
 #include <nav_msgs/Odometry.h>
+#include <sensor_msgs/Range.h>
 #include <geometry_msgs/TransformStamped.h>
 #include <trajectory_msgs/JointTrajectory.h>
 #include <trajectory_msgs/JointTrajectoryPoint.h>
 #include <pr2_controllers_msgs/JointTrajectoryControllerState.h>
+
+#include <robot/RangeData.h>
+using namespace MetraLabs::robotic::robot;
 
 #include "ScitosBase.h"
 #include "PowerCube.h"
@@ -442,6 +446,7 @@ class RosScitosBase {
 	{
 	    m_base = base;
 	    m_odomPublisher = m_node.advertise<nav_msgs::Odometry> ("odom", 50);
+	    m_sonarPublisher = m_node.advertise<sensor_msgs::Range> ("sonar", 50);
 	    m_commandSubscriber = m_node.subscribe("cmd_vel", 100, &RosScitosBase::driveCommandCallback, this);
 	}
 	
@@ -467,11 +472,14 @@ class RosScitosBase {
 	    // since all odometry is 6DOF we'll need a quaternion created from yaw
 	    geometry_msgs::Quaternion odom_quat = tf::createQuaternionMsgFromYaw(th);
 
-	    //first, we'll publish the transform over tf
+
+		/// odometry tf
+
 	    geometry_msgs::TransformStamped odom_trans;
 	    odom_trans.header.stamp = currentTime;
 	    odom_trans.header.frame_id = "/odom";
-	    odom_trans.child_frame_id = "/ScitosBase";
+//	    odom_trans.child_frame_id = "/ScitosBase";
+	    odom_trans.child_frame_id = "/base_link";
 
 	    odom_trans.transform.translation.x = x;
 	    odom_trans.transform.translation.y = y;
@@ -481,25 +489,150 @@ class RosScitosBase {
 	    //send the transform
 	    m_odom_broadcaster.sendTransform(odom_trans);
 
-	    //next, we'll publish the odometry message over ROS
-	    nav_msgs::Odometry odom;
-	    odom.header.stamp = currentTime;
-	    odom.header.frame_id = "/odom";
-	    odom.child_frame_id = "/ScitosBase";
 
-	    //set the position
-	    odom.pose.pose.position.x = x;
-	    odom.pose.pose.position.y = y;
-	    odom.pose.pose.position.z = 0.0;
-	    odom.pose.pose.orientation = odom_quat;
+	    // send velocity data again loop
+	    m_base->loop();
 
-	    //set the velocity
-	    odom.twist.twist.linear.x = vx;
-	    odom.twist.twist.linear.y = 0;
-	    odom.twist.twist.angular.z = vth;
 
-	    //publish the message
-	    m_odomPublisher.publish(odom);
+		/// odometry data
+
+		nav_msgs::Odometry odom_msg;
+		odom_msg.header.stamp = currentTime;
+		odom_msg.header.frame_id = "/odom";
+//	    odom.child_frame_id = "/ScitosBase";
+		odom_msg.child_frame_id = "/base_link";
+
+		//set the position
+		odom_msg.pose.pose.position.x = x;
+		odom_msg.pose.pose.position.y = y;
+		odom_msg.pose.pose.position.z = 0.0;
+		odom_msg.pose.pose.orientation = odom_quat;
+
+		//set the velocity
+		odom_msg.twist.twist.linear.x = vx;
+		odom_msg.twist.twist.linear.y = 0;
+		odom_msg.twist.twist.angular.z = vth;
+
+		//publish the message
+		m_odomPublisher.publish(odom_msg);
+
+
+		/// enable or disable sonar if someone or no one is listening
+		static bool currentSonarStateIsActive = true;
+		if(currentSonarStateIsActive && m_sonarPublisher.getNumSubscribers() == 0) {
+		    m_base->setFeature(FEATURE_SONAR, false);
+			currentSonarStateIsActive = false;
+		} else if(!currentSonarStateIsActive && m_sonarPublisher.getNumSubscribers() != 0) {
+		    m_base->setFeature(FEATURE_SONAR, true);
+			currentSonarStateIsActive = true;
+		}
+
+		if(currentSonarStateIsActive) {
+			static const RangeData::Config* sonarConfig = 0;
+
+			// load config once
+			if (sonarConfig == 0) {
+				m_base->get_sonar_config(sonarConfig);		// TODO what if nonzero rubbish is read?
+//				std::cout << "sonarConfig was 0 and now we read: " << sonarConfig << std::endl;
+			}
+			// if config is loaded, proceed..
+			if (sonarConfig != 0) {
+				const RangeData::ConfigCircularArc* sonarConfigCircular =
+						dynamic_cast<const RangeData::ConfigCircularArc*>(sonarConfig);
+
+				/// sonar tf
+
+				// calculate transforms (once)
+				static std::vector<tf::Transform> sonarTransforms;
+				static bool sonarTransformsCalculated = false;
+				if(!sonarTransformsCalculated) {
+					sonarTransformsCalculated = true;
+					float angle = sonarConfigCircular->first_sensor_angle;
+					for (unsigned int i = 0; i < sonarConfigCircular->sensor_cnt; ++i) {
+						float x = sonarConfigCircular->offset_from_center * std::cos(angle) -0.075;
+						float y = sonarConfigCircular->offset_from_center * std::sin(angle);
+						tf::Transform* transform = new tf::Transform(
+								tf::Quaternion(angle, 0, 0),
+								tf::Vector3(x, y, 0.25));
+						sonarTransforms.push_back(*transform);
+						angle += sonarConfigCircular->sensor_angle_dist;
+					}
+					// broadcast all transforms once
+					std::vector<tf::Transform>::iterator it = sonarTransforms.begin();
+					for (int i=0; it != sonarTransforms.end(); it++) {
+						char targetframe[20];
+						sprintf(targetframe, "/sonar/sonar_%2d", i++);
+						m_odom_broadcaster.sendTransform(
+								tf::StampedTransform(*it, ros::Time::now(), "/base_link", targetframe)
+							);
+					}
+				}
+
+
+
+				/// sonar data
+
+				std::vector<RangeData::Measurement> measurements;
+				m_base->get_sonar(measurements);
+
+				sensor_msgs::Range sonar_msg;
+				sonar_msg.header.stamp = currentTime;
+				sonar_msg.radiation_type = sensor_msgs::Range::INFRARED;
+				sonar_msg.field_of_view = sonarConfigCircular->cone_angle;  // DEG_TO_RAD(15);	// from manual
+				sonar_msg.min_range = 0.2;	// from manual
+				sonar_msg.max_range = 3;	// from manual
+
+				// each time send only one sonar data and one transform to reduce repeating messages
+				{
+					static int nextSonarToSend = 0;
+					char nextTargetframe[20];
+					sprintf(nextTargetframe, "/sonar/sonar_%2d", nextSonarToSend);
+
+					// range data
+					switch(measurements.at(nextSonarToSend).err.std) {
+						case RangeData::RANGE_OKAY:
+						case RangeData::RANGE_NO_OBJECT_WITHIN_RANGE:
+						case RangeData::RANGE_OBJECT_SOMEWHERE_IN_RANGE:
+						case RangeData::RANGE_PROBABLY_OKAY:
+						case RangeData::RANGE_PROBABLY_NO_OBJECT_WITHIN_RANGE:
+						case RangeData::RANGE_PROBABLY_OBJECT_SOMEWHERE_IN_RANGE:
+							sonar_msg.range = measurements.at(nextSonarToSend).range;
+							break;
+						case RangeData::RANGE_INVALID_MEASUREMENT:
+						case RangeData::RANGE_ERR_SENSOR_BROKEN:
+						case RangeData::RANGE_MASKED:
+						default:
+							;// TODO maybe send a zero-range message to make the old value obsolete, if that isn't useful
+							sonar_msg.range = 0;
+					}
+					sonar_msg.header.frame_id = nextTargetframe;
+					m_sonarPublisher.publish(sonar_msg);
+
+					// resend also one transform (the according, why not)
+					m_odom_broadcaster.sendTransform( tf::StampedTransform(
+							sonarTransforms.at(nextSonarToSend), ros::Time::now(), "/base_link", nextTargetframe ) );
+
+					++nextSonarToSend %= measurements.size();
+				}
+
+
+	//		this is code to send all sonar measurements at one time
+	//			std::vector<RangeData::Measurement>::iterator itM = measurements.begin();
+	//			for(int i=0; itM != measurements.end(); itM++) {
+	////				std::cout<<itM->range<<" ";
+	//
+	//		    	char targetframe[20];
+	//		    	sprintf(targetframe, "/sonar/sonar_%2d", i++);
+	//				sonar.header.frame_id = targetframe;
+	//				sonar.range = itM->range+1;
+	//
+	//				//publish the message
+	//				m_sonarPublisher.publish(sonar);
+	//			}
+
+			} // if sonar config loaded
+		} // if sonar active
+
 	}
     
     private:	
@@ -507,6 +640,7 @@ class RosScitosBase {
 	ScitosBase* m_base;
 	tf::TransformBroadcaster m_odom_broadcaster;
 	ros::Publisher m_odomPublisher;
+	ros::Publisher m_sonarPublisher;
 	ros::Subscriber m_commandSubscriber;
 
 	ros::Time remote_control_next_timeout;
@@ -592,6 +726,7 @@ int main(int argc, char **argv)
 	}
 
     base.setFeature(FEATURE_ARM, false);
+    base.setFeature(FEATURE_SONAR, false);
 
 	return 0;
 }

@@ -2,7 +2,8 @@
 #include <iostream>
 
 ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
-	tOdometryHandler(this)
+	tOdometryHandler(this),
+	tSonarHandler(this)
 {
 
 	tOdometryHandler.set_base(this);
@@ -116,6 +117,22 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 	tOdometryData->addCallback(&tOdometryHandler);
 
 	///////////////////////////////////////////////////////////////////////////
+	// Sonar callback registration
+
+	tSonarData = NULL;
+	tErr = getDataFromBlackboard<BlackboardDataRange>(tBlackboard,
+			"MyRobot.Sonar", tSonarData);
+	if (tErr != OK) {
+		fprintf(stderr, "FATAL: Failed to get the Sonar data from the blackboard!\n");
+		exit(-1);
+	}
+
+	tSonarData->addCallback(&tSonarHandler);
+
+	//"RangeFinder.Sonar.Data": class BlackboardDataRange (UUID: fa0b925f-d394-4efd-b8ff-8386442d6234)
+
+
+	///////////////////////////////////////////////////////////////////////////
 
 	// Start the robot.
 	if (tRobot->startClient() != OK) {
@@ -135,7 +152,6 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 
 
 void ScitosBase::loop() {
-
     tVelocityData->setVelocity(m_command_v, m_command_w);
     tVelocityData->setModified();
 }
@@ -146,14 +162,12 @@ void ScitosBase::set_velocity(double v, double w) {
 }
 
 void ScitosBase::publish_odometry(double x, double y, double theta, double v, double w) {
-
     m_x = x;
     m_y = y;
     m_theta = theta;
     m_v = v;
     m_w = w;
 }
-
 void ScitosBase::get_odometry(double& x, double& y, double& theta, double& v, double& w) {
     x = m_x;
     y = m_y;
@@ -161,6 +175,21 @@ void ScitosBase::get_odometry(double& x, double& y, double& theta, double& v, do
     v = m_v;
     w = m_w;
 }
+
+void ScitosBase::publish_sonar(std::vector<RangeData::Measurement> measurements) {
+	mRangeMeasurements = measurements;
+}
+void ScitosBase::get_sonar(std::vector<RangeData::Measurement>& measurements) {
+	measurements = mRangeMeasurements;
+}
+
+void ScitosBase::publish_sonar_config(const RangeData::Config* sonarConfig) {
+	mSonarConfig = sonarConfig;
+}
+void ScitosBase::get_sonar_config(const RangeData::Config*& sonarConfig) {
+	sonarConfig = mSonarConfig;
+}
+
 
 ScitosBase::~ScitosBase() {
     if (tBlackboard->stopBlackboard() != OK)
