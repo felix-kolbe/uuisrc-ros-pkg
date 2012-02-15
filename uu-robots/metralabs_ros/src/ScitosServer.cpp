@@ -1,24 +1,35 @@
-#include "ros/ros.h"
-#include "std_msgs/String.h"
-#include "std_msgs/Int8.h"
-#include "std_msgs/Bool.h"
-#include "std_msgs/Float32MultiArray.h"
-#include "metralabs_ros/movePosition.h"
-#include "metralabs_ros/idAndFloat.h"
-#include "sensor_msgs/JointState.h"
-#include "urdf/model.h"
-#include "metralabs_ros/SchunkStatus.h"
-#include "ScitosBase.h"
+
+#include <boost/thread.hpp>
+
+#include <ros/ros.h>
+
+#include <urdf/model.h>
 #include <tf/transform_broadcaster.h>
-#include <geometry_msgs/TransformStamped.h>
+
+#include <std_msgs/String.h>
+#include <std_msgs/Int8.h>
+#include <std_msgs/Bool.h>
+#include <std_msgs/Float32MultiArray.h>
+
+#include <metralabs_ros/movePosition.h>
+#include <metralabs_ros/idAndFloat.h>
+#include <metralabs_ros/SchunkStatus.h>
+
+#include <sensor_msgs/JointState.h>
 #include <nav_msgs/Odometry.h>
+#include <geometry_msgs/TransformStamped.h>
 #include <trajectory_msgs/JointTrajectory.h>
 #include <trajectory_msgs/JointTrajectoryPoint.h>
-#include <boost/thread.hpp>
 #include <pr2_controllers_msgs/JointTrajectoryControllerState.h>
 
-//#include "PowerCube5.h"
+#include "ScitosBase.h"
 #include "PowerCube.h"
+
+#define SCHUNK_NOT_AMTEC 0
+
+#define DEG_TO_RAD(d)	((d)*M_PI/180.0)
+#define RAD_TO_DEG(r)	((r)*180.0/M_PI)
+
 
 class TrajectoryExecuter {
 
@@ -62,7 +73,7 @@ public:
 						for (unsigned int joint_i = 0; joint_i<nameToNumber.size(); joint_i++) {
 							//fill in the message
 							state_msg.desired = state_msg.actual;
-							state_msg.actual.positions[joint_i] = arm->mManipulator.getModules().at(joint_i).status_pos/180.0 * M_PI;
+							state_msg.actual.positions[joint_i] = RAD_TO_DEG(arm->mManipulator.getModules().at(joint_i).status_pos);
 							state_msg.actual.velocities[joint_i] = 0;
 							state_msg.actual.time_from_start = ros::Duration(0);
 						}
@@ -147,11 +158,11 @@ private:
 			for (unsigned int joint_i = 0; joint_i<traj.joint_names.size(); joint_i++) {
 
 				unsigned int id = nameToNumber[traj.joint_names[joint_i]];
-				arm->pc_move_velocity(id, point.velocities[joint_i]/M_PI * 180.0);
+				arm->pc_move_velocity(id, RAD_TO_DEG(point.velocities[joint_i]));
 
 				//fill in the message
 				state_msg.desired = state_msg.actual;
-				state_msg.actual.positions[joint_i] = arm->mManipulator.getModules().at(joint_i).status_pos/180.0 * M_PI;
+				state_msg.actual.positions[joint_i] = DEG_TO_RAD(arm->mManipulator.getModules().at(joint_i).status_pos);
 				state_msg.actual.velocities[joint_i] = point.velocities[joint_i];
 				state_msg.actual.time_from_start = point.time_from_start;
 			}
@@ -324,7 +335,11 @@ public:
 	void publishCurrentJointState () {
 		m_currentJointState.header.stamp = ros::Time::now();
 		for (unsigned int i=0;i<m_currentJointState.name.size(); i++) {
-			m_currentJointState.position[i]=m_powerCube.mManipulator.getModules().at(i).status_pos/180.0 * M_PI;
+#if SCHUNK_NOT_AMTEC != 0
+			m_currentJointState.position[i]=DEG_TO_RAD(m_powerCube.mManipulator.getModules().at(i).status_pos); // degree to rad
+#else
+			m_currentJointState.position[i]=m_powerCube.mManipulator.getModules().at(i).status_pos; // amtec protocol already in rad
+#endif
 			m_currentJointState.velocity[i]=0.0;
 		}
 		m_currentJointStatePublisher.publish(m_currentJointState);
@@ -353,13 +368,18 @@ public:
 		// The "names" member says how many joints, the other members may be empty.
 		// Not all the joints have to be specified in the message
 		// and not all types must be filled
+#if SCHUNK_NOT_AMTEC != 0
+		float rad_to_degrees_needed = RAD_TO_DEG(1);
+#else
+		float rad_to_degrees_needed = 1;
+#endif
 
 		for (uint i=0;i<data.get()->name.size();i++) {
 			m_powerCube.pc_set_currents_max();
 			if (data.get()->position.size()!=0)
-				m_powerCube.pc_move_position(m_nameToNumber[data.get()->name[i]],(data.get()->position[i])/M_PI * 180.0);
+				m_powerCube.pc_move_position(m_nameToNumber[data.get()->name[i]],(data.get()->position[i]) / rad_to_degrees_needed);
 			if (data.get()->velocity.size()!=0)
-				m_powerCube.pc_set_target_velocity(m_nameToNumber[data.get()->name[i]],(data.get()->velocity[i])/M_PI * 180.0);
+				m_powerCube.pc_set_target_velocity(m_nameToNumber[data.get()->name[i]],(data.get()->velocity[i]) / rad_to_degrees_needed);
 			if (data.get()->effort.size()!=0)
 				m_powerCube.pc_set_current(m_nameToNumber[data.get()->name[i]],(data.get()->effort[i]));
 
@@ -367,6 +387,12 @@ public:
 	}
 
 	void targetJointStateCallbackVelocityControl(const sensor_msgs::JointState::ConstPtr& data) {
+#if SCHUNK_NOT_AMTEC != 0
+		float rad_to_degrees_needed = RAD_TO_DEG(1);
+#else
+		float rad_to_degrees_needed = 1;
+#endif
+
 		// The "names" member says how many joints, the other members may be empty.
 		// Not all the joints have to be specified in the message
 		// and not all types must be filled
@@ -376,13 +402,14 @@ public:
 //			m_powerCube.pc_set_currents_max();
 
 //			if (data.get()->position.size()!=0)
-//				m_powerCube.pc_move_position(m_nameToNumber[data.get()->name[i]],(data.get()->position[i])/M_PI * 180.0);
+//				m_powerCube.pc_move_position(m_nameToNumber[data.get()->name[i]],(data.get()->position[i]) / rad_to_degrees_needed);
 //
-			if (data.get()->velocity.size()!=0)
+			if (data.get()->velocity.size()!=0) {
 				if (data.get()->velocity[i] == 0.0)
 			        m_powerCube.pc_normal_stop(m_nameToNumber[data.get()->name[i]]);
 			    else
-				    m_powerCube.pc_move_velocity(m_nameToNumber[data.get()->name[i]],(data.get()->velocity[i])/M_PI * 180.0);
+				    m_powerCube.pc_move_velocity(m_nameToNumber[data.get()->name[i]],(data.get()->velocity[i]) / rad_to_degrees_needed);
+			}
 			if (data.get()->effort.size()!=0)
 				m_powerCube.pc_set_current(m_nameToNumber[data.get()->name[i]],(data.get()->effort[i]));
 
@@ -399,6 +426,8 @@ public:
 	}
 
 };
+
+
 
 class RosScitosBase {
     
@@ -513,6 +542,8 @@ int main(int argc, char **argv)
 
   
 	ros::Rate loop_rate(30);
+
+	ROS_INFO("Initializing done, starting loop");
 
 	while (n.ok()) {
 		ros::spinOnce();

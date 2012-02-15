@@ -6,12 +6,16 @@
 
 #include <MetraLabsBase.h>
 #include <hardware/SCHUNKMotionManipulator.h>
+#include <hardware/AmtecManipulator.h>
 #include "ros/ros.h"
 
 using namespace std;
 using namespace MetraLabs::base;
 using namespace MetraLabs::robotic::base;
 using namespace MetraLabs::robotic::hardware;
+
+
+//#define SCHUNK_NOT_AMTEC 0 	moved to ScitosServer
 
 class PowerCube {
 private:
@@ -26,9 +30,15 @@ public:
 	//  PowerCube();
 	//  PowerCube(SCHUNKMotionManipulator*);
 
+#if SCHUNK_NOT_AMTEC != 0
 	SCHUNKMotionManipulator mManipulator;
 
 	SCHUNKMotionManipulator::ModuleVector mmModules; // Condition of the modules
+#else
+	AmtecManipulator mManipulator;
+
+	AmtecManipulator::ModuleVector mmModules; // Condition of the modules
+#endif
 
 
 	int pc_emergency_stop();
