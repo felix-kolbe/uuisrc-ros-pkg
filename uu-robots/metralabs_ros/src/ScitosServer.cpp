@@ -435,14 +435,27 @@ public:
 class RosScitosBase {
     
     public:
-	RosScitosBase(ros::NodeHandle& n, ScitosBase* base) : m_node(n) {
-	    
+	RosScitosBase(ros::NodeHandle& n, ScitosBase* base) :
+		m_node(n),
+		remote_control_next_timeout(),
+		dead_remote_control_timeout(0.9)
+	{
 	    m_base = base;
 	    m_odomPublisher = m_node.advertise<nav_msgs::Odometry> ("odom", 50);
 	    m_commandSubscriber = m_node.subscribe("cmd_vel", 100, &RosScitosBase::driveCommandCallback, this);
 	}
 	
 	void loop() {
+		// dead remote control check
+		if(ros::Time::now() > remote_control_next_timeout) {
+			ROS_INFO("remote control timeout, stopping robot");
+			m_base->set_velocity(0, 0);
+			// test again after 1 min (unless vel_cmd is received)
+			// to prevent setting velocity and info msg too often in this fast loop
+			remote_control_next_timeout = ros::Time::now() + ros::Duration(60);
+		}
+
+
 	    // The odometry position and velocities of the robot
 	    double x, y, th, vx, vth;
 	    m_base->get_odometry(x,y,th,vx,vth);
@@ -495,11 +508,14 @@ class RosScitosBase {
 	tf::TransformBroadcaster m_odom_broadcaster;
 	ros::Publisher m_odomPublisher;
 	ros::Subscriber m_commandSubscriber;
+
+	ros::Time remote_control_next_timeout;
+	ros::Duration dead_remote_control_timeout;
     
-    private:	
+    private:
 	void driveCommandCallback(const geometry_msgs::TwistConstPtr& msg) {
 		ROS_DEBUG("Received some speeds [%f %f]", msg->linear.x, msg->angular.z);
-
+		remote_control_next_timeout = ros::Time::now() + dead_remote_control_timeout;
 		m_base->set_velocity(msg->linear.x, msg->angular.z);
 	}
 };
