@@ -143,6 +143,16 @@ int PowerCube::pc_move_position(int id, float angle) {
 	return 0;
 }
 
+int PowerCube::pc_move_position_duration(int id, float angle, uint16_t msecs) {
+	pc_ack(id);
+#if SCHUNK_NOT_AMTEC != 0
+	// TODO not supported?
+#else
+	mManipulator.execMotion(id + ID_OFFSET, AmtecManipulator::MOTION_FSTEP_MODE, angle, msecs);
+#endif
+	return 0;
+}
+
 int PowerCube::pc_move_velocity(int id, float v) {
 	//this->pc_ack(id);
 	/* Set target current to max? -1 maybe */

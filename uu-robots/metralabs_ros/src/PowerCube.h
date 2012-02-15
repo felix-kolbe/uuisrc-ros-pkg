@@ -52,6 +52,7 @@ public:
 	int pc_set_current(int id, float i);
 	int pc_set_currents_max();
 	int pc_move_position(int id, float angle);
+	int pc_move_position_duration(int id, float angle, uint16_t msecs);
 	int pc_move_velocity(int id, float v);
 	int pc_set_target_velocity(int id, float v); // only 4 position control
 	int pc_set_target_acceleration(int id, float a); // only
