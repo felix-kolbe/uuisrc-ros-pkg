@@ -659,14 +659,20 @@ int main(int argc, char **argv)
 	ros::NodeHandle n;
 	ros::NodeHandle n_private("~");
 
+	/// read parameters
+
 	bool disable_arm;
 	n_private.param("disable_arm", disable_arm, false);
 
+	string scitos_config_file;
+	n_private.param<string>("scitos_config_file", scitos_config_file,
+			"/opt/MetraLabs/MLRobotic/etc/config/SCITOS-G5_without_Head_config.xml");
+
 	ros::Duration(0.9).sleep(); // wait to let the running me close its scitos connection
 
-	ScitosBase base(//"/opt/MetraLabs/MLRobotic/etc/config/"
-//			"/home/demo/SCITOS-G5_without_Head_config.xml", argc, argv);
-			"/home/demo/SCITOS-G5_without_Head_config (low noise).xml", argc, argv);
+	/// start robot & node components
+
+	ScitosBase base(scitos_config_file.c_str(), argc, argv);
 
 	if(!disable_arm) {
 		base.setFeature(FEATURE_ARM, true);

@@ -123,11 +123,11 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 	tErr = getDataFromBlackboard<BlackboardDataRange>(tBlackboard,
 			"MyRobot.Sonar", tSonarData);
 	if (tErr != OK) {
-		fprintf(stderr, "FATAL: Failed to get the Sonar data from the blackboard!\n");
-		exit(-1);
+		fprintf(stderr, "FATAL: Failed to get the Sonar data from the blackboard! Is it specified in the XML config?\n");
+//		exit(-1);  no, let the robot start wihtout sonar, if it wasn't specified in the XML config.
 	}
-
-	tSonarData->addCallback(&tSonarHandler);
+	else
+		tSonarData->addCallback(&tSonarHandler);
 
 	//"RangeFinder.Sonar.Data": class BlackboardDataRange (UUID: fa0b925f-d394-4efd-b8ff-8386442d6234)
 
