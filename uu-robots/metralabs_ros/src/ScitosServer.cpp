@@ -2,6 +2,7 @@
 #include <boost/thread.hpp>
 
 #include <ros/ros.h>
+#include <actionlib/server/simple_action_server.h>
 
 #include <urdf/model.h>
 #include <tf/transform_broadcaster.h>
@@ -23,6 +24,7 @@
 #include <trajectory_msgs/JointTrajectory.h>
 #include <trajectory_msgs/JointTrajectoryPoint.h>
 #include <pr2_controllers_msgs/JointTrajectoryControllerState.h>
+#include <control_msgs/FollowJointTrajectoryAction.h>
 
 #include <robot/RangeData.h>
 using namespace MetraLabs::robotic::robot;
@@ -43,7 +45,10 @@ class TrajectoryExecuter {
 
 public:
 
-	TrajectoryExecuter() {
+	TrajectoryExecuter(ros::NodeHandle& nh_, std::string action_server_name) :
+		as_(nh_, action_server_name, boost::bind(&TrajectoryExecuter::executeCB, this, _1), false),
+	    action_name_(action_server_name)
+	{
 		run = false;
 		arm = NULL;
 	}
@@ -66,6 +71,8 @@ public:
 		state_msg.actual.velocities.resize(nameToNumber.size());
 		state_msg.error.positions.resize(nameToNumber.size());
 		state_msg.error.velocities.resize(nameToNumber.size());
+
+	    as_.start();
 	}
 
 	void main() {
@@ -181,6 +188,7 @@ private:
 		}
 	}
 
+private: // by Felix
 	PowerCube* arm;
 	std::map<std::string, unsigned int> nameToNumber;
 	trajectory_msgs::JointTrajectory traj;
@@ -190,6 +198,112 @@ private:
 	boost::mutex mut;
 	pr2_controllers_msgs::JointTrajectoryControllerState state_msg;
 	ros::Publisher state_publisher;
+
+
+	// from action tutorial
+protected:
+	ros::NodeHandle nh_;
+	actionlib::SimpleActionServer<control_msgs::FollowJointTrajectoryAction> as_;
+	std::string action_name_;
+	// create messages that are used to published feedback/result
+	control_msgs::FollowJointTrajectoryFeedback feedback_;
+	control_msgs::FollowJointTrajectoryResult result_;
+
+public:
+	void executeCB(const control_msgs::FollowJointTrajectoryGoalConstPtr& goal)
+	{
+		bool success = true;
+		ros::Time trajStartTime = ros::Time::now();
+		const trajectory_msgs::JointTrajectory& traj = goal->trajectory;
+
+		// init feedback message
+		feedback_.joint_names = traj.joint_names;
+		int num_of_joints = traj.joint_names.size();
+		feedback_.desired.positions.resize(num_of_joints);
+		feedback_.desired.velocities.resize(num_of_joints);
+		feedback_.desired.accelerations.resize(num_of_joints);
+		feedback_.actual.positions.resize(num_of_joints);
+		feedback_.actual.velocities.resize(num_of_joints);
+		feedback_.actual.accelerations.resize(num_of_joints);
+		feedback_.error.positions.resize(num_of_joints);
+		feedback_.error.velocities.resize(num_of_joints);
+		feedback_.error.accelerations.resize(num_of_joints);
+
+		// for each trajectory step...
+		for (unsigned int step = 0; step < traj.points.size(); step++) {
+			ROS_INFO_STREAM("Trajectory thread executing step "<< step);
+
+			// check that preempt has not been requested by the client
+			if (as_.isPreemptRequested() || !ros::ok()) {
+				ROS_INFO("%s: Preempted", action_name_.c_str());
+				// set the action state to preempted
+				as_.setPreempted();
+				success = false;
+				arm->pc_normal_stop();
+				break;
+			}
+
+
+			// get the step (point)
+			const trajectory_msgs::JointTrajectoryPoint& point = traj.points[step];
+			feedback_.desired = point;
+
+			// for each joint in step...
+			for (unsigned int joint_i = 0; joint_i < traj.joint_names.size(); joint_i++) {
+
+				int id = nameToNumber[traj.joint_names[joint_i]];
+
+				float accRad = point.accelerations[joint_i];
+				float velRad = point.velocities[joint_i];
+				float posRad = point.positions[joint_i];
+
+				ROS_INFO_STREAM("Moving module "<<id<<" with "<<velRad<<" rad/s and "<<accRad<<" rad/s*s to "<<posRad<<" rad");
+
+#define SIGN_TOLERANT_MAX(value, def)	( (value)==0 ? 0 : \
+											( \
+												(value)>0 ? \
+													std::max((value), (def)) : \
+													std::min((value), -(def)) \
+											) \
+										)
+
+				velRad = SIGN_TOLERANT_MAX(velRad, 0.05f); // the slowest reasonable speed for our joints
+//				accRad = SIGN_TOLERANT_MAX(accRad, 0.??f);
+
+#if SCHUNK_NOT_AMTEC != 0
+				// TODO schunk option of trajectory action callback
+//				arm->pc_move_velocity(id, velDeg);
+#else
+				arm->pc_set_target_acceleration(id, accRad);
+				arm->pc_set_target_velocity(id, velRad);
+//				arm->pc_move_velocity(id, velRad);	TODO choose this if the velocity and time are calculated precisely
+				arm->pc_move_position(id, posRad);
+#endif
+
+				// fill the joint individual feedback part
+				feedback_.actual.positions[id] = arm->mManipulator.getModules().at(id).status_pos;
+				feedback_.actual.velocities[id] = arm->mManipulator.getModules().at(id).status_vel;
+//				feedback_.actual.accelerations[id] = arm->mManipulator.getModules().at(id).status_acc / max_acceleration?;
+			}
+
+			// publish the feedback
+			//	state_msg.header.stamp = ros::Time::now();
+			feedback_.actual.time_from_start = ros::Time::now() - trajStartTime;
+			as_.publishFeedback(feedback_);
+
+			// sleep until step time (in time_from_start) is reached
+			ros::Duration((trajStartTime + point.time_from_start) - ros::Time::now()).sleep();
+//			while ((ros::Time::now() - trajStartTime) < point.time_from_start)
+//				ros::Duration(0.001).sleep();
+		}//for each trajectory step...
+
+		if(success) {
+			result_.error_code = control_msgs::FollowJointTrajectoryResult::SUCCESSFUL;
+			ROS_INFO("%s: Succeeded", action_name_.c_str());
+			// set the action state to succeeded
+			as_.setSucceeded(result_);
+		}
+	}
 
 };
 
@@ -213,7 +327,10 @@ private:
 
 public:
 
-	SchunkServer(ros::NodeHandle &node) : m_node(node){
+	SchunkServer(ros::NodeHandle &node, std::string action_server_name) :
+		m_node(node),
+		m_executer(node, action_server_name)
+	{
 		init();
 	}
 
@@ -659,6 +776,8 @@ int main(int argc, char **argv)
 	ros::NodeHandle n;
 	ros::NodeHandle n_private("~");
 
+	std::string action_server_name = "schunk/follow_joint_trajectory";
+
 	/// read parameters
 
 	bool disable_arm;
@@ -676,12 +795,12 @@ int main(int argc, char **argv)
 
 	if(!disable_arm) {
 		base.setFeature(FEATURE_ARM, true);
-		ros::Duration(0.3).sleep(); // let arm start up
+		ros::Duration(0.9).sleep(); // let arm start up
 	}
 
 	RosScitosBase ros_scitos(n, &base);
 
-	SchunkServer server(n);
+	SchunkServer server(n, action_server_name);
 
 	/*
 	 * /schunk/position/joint_state -> publishes joint state for kinematics modules

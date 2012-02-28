@@ -12,12 +12,15 @@
 
   <depend package="tf"/>
   <depend package="urdf"/>
+
+  <depend package="actionlib"/>
   
   <depend package="std_msgs"/>
   <depend package="sensor_msgs"/>
   <depend package="geometry_msgs"/>
   
   <depend package="nav_msgs"/>
+  <depend package="control_msgs"/>
   <depend package="trajectory_msgs"/>
   <depend package="pr2_controllers_msgs"/>
 
