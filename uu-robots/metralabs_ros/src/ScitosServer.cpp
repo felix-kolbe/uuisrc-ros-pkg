@@ -490,7 +490,7 @@ public:
 		m_schunkStatusPublisher.publish(m_schunkStatus);
 	}
 
-	void targetJointStateCallbackPositionControl(const sensor_msgs::JointState::ConstPtr& data) {
+	void cb_targetJointStatePositionControl(const sensor_msgs::JointState::ConstPtr& data) {
 		// The "names" member says how many joints, the other members may be empty.
 		// Not all the joints have to be specified in the message
 		// and not all types must be filled
@@ -501,18 +501,31 @@ public:
 #endif
 
 		for (uint i=0;i<data.get()->name.size();i++) {
+			string joint_name = data.get()->name[i];
+			int joint_number = m_nameToNumber[joint_name];
+			ROS_INFO_STREAM("cb_PositionControl: joint "<<joint_name<<" (#"<<joint_number<<")");
+
 			m_powerCube.pc_set_currents_max();
-			if (data.get()->position.size()!=0)
-				m_powerCube.pc_move_position(m_nameToNumber[data.get()->name[i]],(data.get()->position[i]) / rad_to_degrees_needed);
-			if (data.get()->velocity.size()!=0)
-				m_powerCube.pc_set_target_velocity(m_nameToNumber[data.get()->name[i]],(data.get()->velocity[i]) / rad_to_degrees_needed);
-			if (data.get()->effort.size()!=0)
-				m_powerCube.pc_set_current(m_nameToNumber[data.get()->name[i]],(data.get()->effort[i]));
+			if (data.get()->position.size()!=0) {
+				double pos = data.get()->position[i] / rad_to_degrees_needed;
+				ROS_INFO_STREAM(" to position "<<pos);
+				m_powerCube.pc_move_position(joint_number, pos);
+			}
+			if (data.get()->velocity.size()!=0) {
+				double vel = data.get()->velocity[i] / rad_to_degrees_needed;
+				ROS_INFO_STREAM(" with velocity "<<vel);
+				m_powerCube.pc_set_target_velocity(joint_number, vel);
+			}
+			if (data.get()->effort.size()!=0) {
+				double eff = data.get()->effort[i];
+				ROS_INFO_STREAM(" with effort "<<eff);
+				m_powerCube.pc_set_current(joint_number, eff);
+			}
 
 		}
 	}
 
-	void targetJointStateCallbackVelocityControl(const sensor_msgs::JointState::ConstPtr& data) {
+	void cb_targetJointStateVelocityControl(const sensor_msgs::JointState::ConstPtr& data) {
 #if SCHUNK_NOT_AMTEC != 0
 		float rad_to_degrees_needed = RAD_TO_DEG(1);
 #else
@@ -524,20 +537,25 @@ public:
 		// and not all types must be filled
 //		m_powerCube.pc_ack();
 		for (uint i=0;i<data.get()->name.size();i++) {
+			string joint_name = data.get()->name[i];
+			int joint_number = m_nameToNumber[joint_name];
+			ROS_INFO_STREAM("cb_VelocityControl: joint "<<joint_name<<" (#"<<joint_number<<")");
 
 //			m_powerCube.pc_set_currents_max();
 
-//			if (data.get()->position.size()!=0)
-//				m_powerCube.pc_move_position(m_nameToNumber[data.get()->name[i]],(data.get()->position[i]) / rad_to_degrees_needed);
-//
 			if (data.get()->velocity.size()!=0) {
-				if (data.get()->velocity[i] == 0.0)
-			        m_powerCube.pc_normal_stop(m_nameToNumber[data.get()->name[i]]);
+				double vel = data.get()->velocity[i] / rad_to_degrees_needed;
+				ROS_INFO_STREAM(" with velocity "<<vel);
+				if (vel == 0.0)
+			        m_powerCube.pc_normal_stop(joint_number);
 			    else
-				    m_powerCube.pc_move_velocity(m_nameToNumber[data.get()->name[i]],(data.get()->velocity[i]) / rad_to_degrees_needed);
+				    m_powerCube.pc_move_velocity(joint_number, vel);
 			}
-			if (data.get()->effort.size()!=0)
-				m_powerCube.pc_set_current(m_nameToNumber[data.get()->name[i]],(data.get()->effort[i]));
+			if (data.get()->effort.size()!=0) {
+				double eff = data.get()->effort[i];
+				ROS_INFO_STREAM(" with effort "<<eff);
+				m_powerCube.pc_set_current(joint_number, eff);
+			}
 
 		}
 	}
@@ -795,7 +813,7 @@ int main(int argc, char **argv)
 
 	if(!disable_arm) {
 		base.setFeature(FEATURE_ARM, true);
-		ros::Duration(0.9).sleep(); // let arm start up
+		ros::Duration(2.3).sleep(); // let arm start up
 	}
 
 	RosScitosBase ros_scitos(n, &base);
@@ -809,8 +827,8 @@ int main(int argc, char **argv)
 	 * /schunk/status -> to publish all the statuses
 	 */
 
-	ros::Subscriber targetJointStateSubscriberPositionControl = n.subscribe("/schunk/target_pc/joint_states", 1, &SchunkServer::targetJointStateCallbackPositionControl, &server);
-	ros::Subscriber targetJointStateSubscriberVelocityControl = n.subscribe("/schunk/target_vc/joint_states", 1, &SchunkServer::targetJointStateCallbackVelocityControl, &server);
+	ros::Subscriber targetJointStateSubscriberPositionControl = n.subscribe("/schunk/target_pc/joint_states", 1, &SchunkServer::cb_targetJointStatePositionControl, &server);
+	ros::Subscriber targetJointStateSubscriberVelocityControl = n.subscribe("/schunk/target_vc/joint_states", 1, &SchunkServer::cb_targetJointStateVelocityControl, &server);
 
 
 	ros::Subscriber emergency = n.subscribe("/emergency", 1, &SchunkServer::cb_emergency, &server);
