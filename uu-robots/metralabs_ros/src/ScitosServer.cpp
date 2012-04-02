@@ -41,6 +41,10 @@ using namespace MetraLabs::robotic::robot;
 #define FEATURE_ARM		( "EBC1_Enable24V" )
 #define FEATURE_SONAR	( "SonarsActive" )
 
+#define SLOWEST_REASONABLE_JOINT_SPEED	0.05f // the slowest reasonable speed for our joints
+
+
+
 class TrajectoryExecuter {
 
 public:
@@ -231,7 +235,6 @@ public:
 
 		// for each trajectory step...
 		for (unsigned int step = 0; step < traj.points.size(); step++) {
-			ROS_INFO_STREAM("Trajectory thread executing step "<< step);
 
 			// check that preempt has not been requested by the client
 			if (as_.isPreemptRequested() || !ros::ok()) {
@@ -247,6 +250,8 @@ public:
 			// get the step target
 			const trajectory_msgs::JointTrajectoryPoint& trajStep = traj.points[step];
 			feedback_.desired = trajStep;
+
+			ROS_INFO_STREAM("Trajectory thread executing step "<<step<<" until "<<trajStep.time_from_start<<" s / "<<(trajStartTime+trajStep.time_from_start));
 
 			// for each joint in step...
 			for (unsigned int joint_i = 0; joint_i < traj.joint_names.size(); joint_i++) {
@@ -267,7 +272,7 @@ public:
 											) \
 										)
 
-				velRad = SIGN_TOLERANT_MAX(velRad, 0.05f); // the slowest reasonable speed for our joints
+				velRad = SIGN_TOLERANT_MAX(velRad, SLOWEST_REASONABLE_JOINT_SPEED);
 //				accRad = SIGN_TOLERANT_MAX(accRad, 0.??f);
 
 #if SCHUNK_NOT_AMTEC != 0
@@ -296,6 +301,23 @@ public:
 		}//for each trajectory step...
 
 		if(success) {
+			ROS_INFO("Trajectory done, waiting for joints to stop...");
+			bool all_joints_stopped;
+			do {
+				ros::Duration(0.06).sleep();
+				all_joints_stopped = true;
+				for (unsigned int joint_i = 0; joint_i < traj.joint_names.size(); joint_i++) {
+					uint8_t moving, foo; float foofl;
+					arm->getModuleStatus(joint_i, &foo, &moving, &foo, &foo, &foo, &foo, &foo, &foo, &foo, &foofl);
+					if(moving) {
+						all_joints_stopped = false;
+						break;
+					}
+//					if(arm->mManipulator.getModules().at(joint_i).status_vel == 0)
+//						all_joints_stopped = false;
+				}
+			} while (!all_joints_stopped);
+
 			result_.error_code = control_msgs::FollowJointTrajectoryResult::SUCCESSFUL;
 			ROS_INFO("%s: Succeeded", action_name_.c_str());
 			// set the action state to succeeded
