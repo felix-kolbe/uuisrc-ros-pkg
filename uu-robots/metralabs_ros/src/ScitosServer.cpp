@@ -244,18 +244,18 @@ public:
 			}
 
 
-			// get the step (point)
-			const trajectory_msgs::JointTrajectoryPoint& point = traj.points[step];
-			feedback_.desired = point;
+			// get the step target
+			const trajectory_msgs::JointTrajectoryPoint& trajStep = traj.points[step];
+			feedback_.desired = trajStep;
 
 			// for each joint in step...
 			for (unsigned int joint_i = 0; joint_i < traj.joint_names.size(); joint_i++) {
 
 				int id = nameToNumber[traj.joint_names[joint_i]];
 
-				float accRad = point.accelerations[joint_i];
-				float velRad = point.velocities[joint_i];
-				float posRad = point.positions[joint_i];
+				float accRad = trajStep.accelerations[joint_i];
+				float velRad = trajStep.velocities[joint_i];
+				float posRad = trajStep.positions[joint_i];
 
 				ROS_INFO_STREAM("Moving module "<<id<<" with "<<velRad<<" rad/s and "<<accRad<<" rad/s*s to "<<posRad<<" rad");
 
@@ -287,14 +287,12 @@ public:
 			}
 
 			// publish the feedback
-			//	state_msg.header.stamp = ros::Time::now();
+			feedback_.header.stamp = ros::Time::now(); // TODO needed?
 			feedback_.actual.time_from_start = ros::Time::now() - trajStartTime;
 			as_.publishFeedback(feedback_);
 
-			// sleep until step time (in time_from_start) is reached
-			ros::Duration((trajStartTime + point.time_from_start) - ros::Time::now()).sleep();
-//			while ((ros::Time::now() - trajStartTime) < point.time_from_start)
-//				ros::Duration(0.001).sleep();
+			// sleep until step time has passed
+			ros::Time::sleepUntil(trajStartTime + trajStep.time_from_start);
 		}//for each trajectory step...
 
 		if(success) {
@@ -560,7 +558,7 @@ public:
 		}
 	}
 
-	void commandTrajectory(const trajectory_msgs::JointTrajectory traj) {
+	void cb_commandTrajectory(const trajectory_msgs::JointTrajectory traj) {
 		ROS_INFO("Schunk Server: received a new trajectory");
 		m_executer.stop();
 		while (! m_executer.is_waiting() ) {
@@ -830,7 +828,6 @@ int main(int argc, char **argv)
 	ros::Subscriber targetJointStateSubscriberPositionControl = n.subscribe("/schunk/target_pc/joint_states", 1, &SchunkServer::cb_targetJointStatePositionControl, &server);
 	ros::Subscriber targetJointStateSubscriberVelocityControl = n.subscribe("/schunk/target_vc/joint_states", 1, &SchunkServer::cb_targetJointStateVelocityControl, &server);
 
-
 	ros::Subscriber emergency = n.subscribe("/emergency", 1, &SchunkServer::cb_emergency, &server);
 	ros::Subscriber stop = n.subscribe("/stop", 1, &SchunkServer::cb_stop, &server);
 	ros::Subscriber firstRef = n.subscribe("/firstRef", 1, &SchunkServer::cb_firstRef, &server);
@@ -847,7 +844,7 @@ int main(int argc, char **argv)
 	ros::Subscriber targetAcceleration = n.subscribe("/targetAcceleration", 1, &SchunkServer::cb_targetAcceleration, &server);
 //	ros::Subscriber startPosition = n.subscribe("/startPosition", 1, &PubsAndSubs::cb_startPosition, &services);
 
-	ros::Subscriber command = n.subscribe("command", 1, &SchunkServer::commandTrajectory, &server);
+	ros::Subscriber command = n.subscribe("command", 1, &SchunkServer::cb_commandTrajectory, &server);
 
   
 	ros::Rate loop_rate(30);
