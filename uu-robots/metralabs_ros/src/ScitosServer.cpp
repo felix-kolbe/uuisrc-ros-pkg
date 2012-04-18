@@ -41,7 +41,8 @@ using namespace MetraLabs::robotic::robot;
 #define FEATURE_ARM		( "EBC1_Enable24V" )
 #define FEATURE_SONAR	( "SonarsActive" )
 
-#define SLOWEST_REASONABLE_JOINT_SPEED	0.05f // the slowest reasonable speed for our joints
+#define SLOWEST_REASONABLE_JOINT_SPEED	0.015f // the slowest reasonable speed for our joints (IMHO)
+#define TOO_SLOW	0.002f //
 
 
 
@@ -234,7 +235,8 @@ public:
 		feedback_.error.accelerations.resize(num_of_joints);
 
 		// for each trajectory step...
-		for (unsigned int step = 0; step < traj.points.size(); step++) {
+		unsigned int steps = traj.points.size();
+		for (unsigned int step_i = 0; step_i < steps; step_i++) {
 
 			// check that preempt has not been requested by the client
 			if (as_.isPreemptRequested() || !ros::ok()) {
@@ -248,10 +250,10 @@ public:
 
 
 			// get the step target
-			const trajectory_msgs::JointTrajectoryPoint& trajStep = traj.points[step];
+			const trajectory_msgs::JointTrajectoryPoint& trajStep = traj.points[step_i];
 			feedback_.desired = trajStep;
 
-			ROS_INFO_STREAM("Trajectory thread executing step "<<step<<" until "<<trajStep.time_from_start<<" s / "<<(trajStartTime+trajStep.time_from_start));
+			ROS_INFO_STREAM("Trajectory thread executing step "<<step_i<<"+1/"<<steps<<" until "<<trajStep.time_from_start<<" s / "<<(trajStartTime+trajStep.time_from_start));
 
 			// for each joint in step...
 			for (unsigned int joint_i = 0; joint_i < traj.joint_names.size(); joint_i++) {
@@ -262,18 +264,43 @@ public:
 				float velRad = trajStep.velocities[joint_i];
 				float posRad = trajStep.positions[joint_i];
 
-				ROS_INFO_STREAM("Moving module "<<id<<" with "<<velRad<<" rad/s and "<<accRad<<" rad/s*s to "<<posRad<<" rad");
+//				ROS_INFO_STREAM("Moving module "<<id<<" with "<</*setiosflags(ios::fixed)<<*/ velRad<<" rad/s and "<<accRad<<" rad/s*s to "<<posRad<<" rad");
 
+
+/// don't go below +- def
 #define SIGN_TOLERANT_MAX(value, def)	( (value)==0 ? 0 : \
 											( \
 												(value)>0 ? \
-													std::max((value), (def)) : \
+													std::max((value),  (def)) : \
 													std::min((value), -(def)) \
 											) \
 										)
+/// don't ...
+#define SIGN_TOLERANT_CUT(value, lim)	( (value)==0 ? 0 : \
+											( \
+												(value)>0 ? \
+													( (value) >  (lim) ? (value) : (0) ) : \
+													( (value) < -(lim) ? (value) : (0) ) \
+											) \
+										)
 
-				velRad = SIGN_TOLERANT_MAX(velRad, SLOWEST_REASONABLE_JOINT_SPEED);
-//				accRad = SIGN_TOLERANT_MAX(accRad, 0.??f);
+//				velRad = SIGN_TOLERANT_CUT(velRad, TOO_SLOW);
+
+//				velRad = SIGN_TOLERANT_MAX(velRad, SLOWEST_REASONABLE_JOINT_SPEED);
+
+//				accRad = SIGN_TOLERANT_MAX(accRad, 0.43f);
+
+				accRad = 0.21;
+
+				if(step_i == steps-1) {
+					velRad = SLOWEST_REASONABLE_JOINT_SPEED;
+				}
+
+//				if(std::abs(velRad) < TOO_SLOW) {
+//					ROS_INFO_STREAM("Skipping module "<<id<<" due to too low velocity");
+//				}
+//				else {
+				ROS_INFO_STREAM("Moving module "<<id<<" with "<</*setiosflags(ios::fixed)<<*/ velRad<<" rad/s and "<<accRad<<" rad/s*s to "<<posRad<<" rad");
 
 #if SCHUNK_NOT_AMTEC != 0
 				// TODO schunk option of trajectory action callback
@@ -281,14 +308,24 @@ public:
 #else
 				arm->pc_set_target_acceleration(id, accRad);
 				arm->pc_set_target_velocity(id, velRad);
-//				arm->pc_move_velocity(id, velRad);	TODO choose this if the velocity and time are calculated precisely
 				arm->pc_move_position(id, posRad);
+//				arm->pc_move_velocity(id, velRad);	TODO choose this if the velocity and time are calculated precisely
+
+//				if(step_i == steps-1) {
+//					ROS_INFO("LAST STEP, moving to position instead of with velocity.");
+//					arm->pc_move_position(id, posRad);
+//				}
+//				else {
+////					ROS_INFO("Velocity move.");
+//					arm->pc_move_velocity(id, velRad);
+//				}
 #endif
+//				}
 
 				// fill the joint individual feedback part
 				feedback_.actual.positions[id] = arm->mManipulator.getModules().at(id).status_pos;
 				feedback_.actual.velocities[id] = arm->mManipulator.getModules().at(id).status_vel;
-//				feedback_.actual.accelerations[id] = arm->mManipulator.getModules().at(id).status_acc / max_acceleration?;
+//				feedback_.actual.accelerations[id] = arm->mManipulator.getModules().at(id).status_acc / max_acceleration?; TODO
 			}
 
 			// publish the feedback
@@ -307,9 +344,11 @@ public:
 				ros::Duration(0.06).sleep();
 				all_joints_stopped = true;
 				for (unsigned int joint_i = 0; joint_i < traj.joint_names.size(); joint_i++) {
-					uint8_t moving, foo; float foofl;
-					arm->getModuleStatus(joint_i, &foo, &moving, &foo, &foo, &foo, &foo, &foo, &foo, &foo, &foofl);
+					uint8_t moving, brake, foo;
+					float foofl;
+					arm->getModuleStatus(joint_i, &foo, &moving, &foo, &foo, &foo, &brake, &foo, &foo, &foo, &foofl);
 					if(moving) {
+//					if(!brake) {
 						all_joints_stopped = false;
 						break;
 					}
@@ -392,7 +431,7 @@ public:
 			m_schunkStatus.joints.push_back(status);
 		}
 
-//		m_executer.arm = &m_powerCube;
+//		m_executer.arm = &m_powerCube; 			changed them to private and args
 //		m_executer.nameToNumber = m_nameToNumber;
 		m_executer.init(m_node, &m_powerCube, m_nameToNumber);
 
