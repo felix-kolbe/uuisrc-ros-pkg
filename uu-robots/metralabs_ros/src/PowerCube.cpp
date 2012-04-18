@@ -26,6 +26,8 @@ void PowerCube::init() {
 	modulesNum = mManipulator.getModules().size();
 
 	ROS_INFO("Found %d SCHUNK modules", modulesNum);
+
+	pc_ack(); // needed to ref the gripper
 }
 
 int PowerCube::pc_emergency_stop() {
@@ -55,6 +57,7 @@ int PowerCube::pc_normal_stop(int id) {
 }
 
 int PowerCube::pc_first_ref() {
+#if SCHUNK_NOT_AMTEC != 0
 	pc_ack();
 	sleep(1);
 	pc_ref();
@@ -63,6 +66,9 @@ int PowerCube::pc_first_ref() {
 	sleep(1);
 	pc_ref();
 	sleep(15);
+#else
+	// TODO if there needs to be sth here
+#endif
 	return 0;
 }
 
@@ -73,14 +79,24 @@ int PowerCube::pc_ack() {
 #else
 	const AmtecManipulator::ModuleConfig *moduleConfig;
 #endif
-	for (size_t i = 0; i < mmModules.size() - 1; i++) {
+	for (size_t id = 0; id < mmModules.size(); id++) { // including gripper
 #if SCHUNK_NOT_AMTEC != 0
-		mManipulator.getModuleConfig(i + ID_OFFSET, moduleConfig);
-		if (moduleConfig->error_code!=217) 	// only do an ackall on the non emergency stoped
-			this->pc_ack(i);
+		mManipulator.getModuleConfig(id + ID_OFFSET, moduleConfig);
+		if (moduleConfig->error_code!=217) 	// only do an ackall on the non emergency stopped
+			this->pc_ack(id);
 #else
-		mManipulator.getModuleConfig(i + ID_OFFSET, moduleConfig);
-		// TODO test status if needed at all and ack or reset
+		mManipulator.getModuleConfig(id + ID_OFFSET, moduleConfig);
+
+		// TODO cleanly integrate this fix for our gripper.
+		if(moduleConfig->linear) { // suspect a gripper that is safe to reference
+			if(!moduleConfig->status_flags.flags.home_ok && id + ID_OFFSET == 25) {
+				pc_ref(id); // start reference
+				ros::Duration(4).sleep(); // wait to finish reference
+				pc_set_target_acceleration(id, 0.200); // set gripper acceleration
+			}
+		}
+
+		// TODO test status if needed at all and ack or reset		// TODO i don't know whats about these lines
 //		this->pc_ack(i); TODO was this really the disturbing thing?
 #endif
 	}
@@ -109,7 +125,10 @@ int PowerCube::pc_ref() {
 int PowerCube::pc_ref(int id) {
 	pc_ack(id);
 	mManipulator.ref(id + ID_OFFSET);
-	pc_ack(id);
+											// TODO cleanly integrate this fix for our gripper.
+											if(id + ID_OFFSET == 25)
+												pc_set_target_acceleration(id, 0.200);
+//	pc_ack(id);  TODO is this disturbing the gripper?
 	return 0;
 }
 
@@ -118,6 +137,9 @@ int PowerCube::pc_set_current(int id, float i) {
 	mManipulator.setTargetCurrent(id + ID_OFFSET, i);
 #else
 	// TODO set current through modulconfig?
+//	const AmtecManipulator::ModuleConfig cfg;
+//	mManipulator.getModuleConfig(id + ID_OFFSET, &cfg);
+//	no setter.. ?
 #endif
 	return 0;
 }
@@ -167,7 +189,7 @@ int PowerCube::pc_move_velocity(int id, float v) {
 }
 
 int PowerCube::pc_set_target_acceleration(int id, float a) {
-	mManipulator.setTargetAcceleration(id, a);
+	mManipulator.setTargetAcceleration(id + ID_OFFSET, a);
 	return 0;
 }
 
@@ -202,7 +224,7 @@ void PowerCube::getModuleStatus(int moduleID, uint8_t *referenced, uint8_t *movi
 	*error = moduleConfig->status_flags.flags.error==1;
 	*moveEnd = moduleConfig->status_flags.flags.halted==1; // TODO check if used correctly
 	*moving = moduleConfig->status_flags.flags.motion==1;
-	*posReached = moduleConfig->status_flags.flags.brake==0; // no better equivalent // TODO really?
+	*posReached = moduleConfig->status_flags.flags.brake==0; // TODO // no better equivalent // really?
 	*progMode = 0; // no equivalent
 	*referenced = moduleConfig->status_flags.flags.home_ok==1;
 	*warning = moduleConfig->status_flags.flags.cur_limit==1;
