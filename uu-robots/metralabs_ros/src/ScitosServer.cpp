@@ -499,7 +499,10 @@ public:
 
 	void cb_moveVelocity(const metralabs_ros::idAndFloat::ConstPtr& data)	{
 		ROS_INFO("cb_moveVelocity: [%d, %f]", data->id, data->value);
-		m_powerCube.pc_move_velocity(data->id, data->value);
+		if (data->value == 0.0)
+	        m_powerCube.pc_normal_stop(data->id);
+	    else
+		    m_powerCube.pc_move_velocity(data->id, data->value);
 	}
 
 	void cb_targetVelocity(const metralabs_ros::idAndFloat::ConstPtr& data)	{
@@ -521,11 +524,14 @@ public:
 		m_currentJointState.header.stamp = ros::Time::now();
 		for (unsigned int i=0;i<m_currentJointState.name.size(); i++) {
 #if SCHUNK_NOT_AMTEC != 0
-			m_currentJointState.position[i]=DEG_TO_RAD(m_powerCube.mManipulator.getModules().at(i).status_pos); // degree to rad
+			SCHUNKMotionManipulator::ModuleConfig modCfg = m_powerCube.mManipulator.getModules().at(i);
+			m_currentJointState.position[i]=DEG_TO_RAD(modCfg.status_pos);
+			m_currentJointState.velocity[i]=DEG_TO_RAD(modCfg.status_vel);
 #else
-			m_currentJointState.position[i]=m_powerCube.mManipulator.getModules().at(i).status_pos; // amtec protocol already in rad
+			AmtecManipulator::ModuleConfig modCfg = m_powerCube.mManipulator.getModules().at(i);
+			m_currentJointState.position[i]=modCfg.status_pos; // amtec protocol already in rad
+			m_currentJointState.velocity[i]=modCfg.status_vel;
 #endif
-			m_currentJointState.velocity[i]=0.0;
 		}
 		m_currentJointStatePublisher.publish(m_currentJointState);
 	}
@@ -889,20 +895,21 @@ int main(int argc, char **argv)
 	ros::Subscriber targetJointStateSubscriberPositionControl = n.subscribe("/schunk/target_pc/joint_states", 1, &SchunkServer::cb_targetJointStatePositionControl, &server);
 	ros::Subscriber targetJointStateSubscriberVelocityControl = n.subscribe("/schunk/target_vc/joint_states", 1, &SchunkServer::cb_targetJointStateVelocityControl, &server);
 
+	// those topics which must be received multiple times (for each joint) got a 10 for their message buffer
 	ros::Subscriber emergency = n.subscribe("/emergency", 1, &SchunkServer::cb_emergency, &server);
 	ros::Subscriber stop = n.subscribe("/stop", 1, &SchunkServer::cb_stop, &server);
 	ros::Subscriber firstRef = n.subscribe("/firstRef", 1, &SchunkServer::cb_firstRef, &server);
-	ros::Subscriber ack = n.subscribe("/ack", 1, &SchunkServer::cb_ack, &server);
+	ros::Subscriber ack = n.subscribe("/ack", 10, &SchunkServer::cb_ack, &server);
 	ros::Subscriber ackAll = n.subscribe("/ackAll", 1, &SchunkServer::cb_ackAll, &server);
-	ros::Subscriber ref = n.subscribe("/ref", 1, &SchunkServer::cb_ref, &server);
+	ros::Subscriber ref = n.subscribe("/ref", 10, &SchunkServer::cb_ref, &server);
 	ros::Subscriber refAll = n.subscribe("/refAll", 1, &SchunkServer::cb_refAll, &server);
-	ros::Subscriber current = n.subscribe("/current", 1, &SchunkServer::cb_current, &server);
+	ros::Subscriber current = n.subscribe("/current", 10, &SchunkServer::cb_current, &server);
 	ros::Subscriber currentsMaxAll = n.subscribe("/currentsMaxAll", 1, &SchunkServer::cb_currentsMaxAll, &server);
-	ros::Subscriber movePosition = n.subscribe("/movePosition", 1, &SchunkServer::cb_movePosition, &server);
+	ros::Subscriber movePosition = n.subscribe("/movePosition", 10, &SchunkServer::cb_movePosition, &server);
 //	n.subscribe("/movePositions", 1, &C_Callbacks::cb_movePositions, &listener);
-	ros::Subscriber moveVelocity = n.subscribe("/moveVelocity", 1, &SchunkServer::cb_moveVelocity, &server);
-	ros::Subscriber targetVelocity = n.subscribe("/targetVelocity", 1, &SchunkServer::cb_targetVelocity, &server);
-	ros::Subscriber targetAcceleration = n.subscribe("/targetAcceleration", 1, &SchunkServer::cb_targetAcceleration, &server);
+	ros::Subscriber moveVelocity = n.subscribe("/moveVelocity", 10, &SchunkServer::cb_moveVelocity, &server);
+	ros::Subscriber targetVelocity = n.subscribe("/targetVelocity", 10, &SchunkServer::cb_targetVelocity, &server);
+	ros::Subscriber targetAcceleration = n.subscribe("/targetAcceleration", 10, &SchunkServer::cb_targetAcceleration, &server);
 //	ros::Subscriber startPosition = n.subscribe("/startPosition", 1, &PubsAndSubs::cb_startPosition, &services);
 
 	ros::Subscriber command = n.subscribe("command", 1, &SchunkServer::cb_commandTrajectory, &server);
