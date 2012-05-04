@@ -3,10 +3,9 @@
 
 ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 	tOdometryHandler(this),
-	tSonarHandler(this)
+	tSonarHandler(this),
+	tBatteryStateHandler(this)
 {
-
-	tOdometryHandler.set_base(this);
 
 	m_command_v = 0;
 	m_command_w = 0;
@@ -124,12 +123,26 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 			"MyRobot.Sonar", tSonarData);
 	if (tErr != OK) {
 		fprintf(stderr, "FATAL: Failed to get the Sonar data from the blackboard! Is it specified in the XML config?\n");
-//		exit(-1);  no, let the robot start wihtout sonar, if it wasn't specified in the XML config.
+//		exit(-1);  no, let the robot start wihtout sonar, even if it wasn't specified in the XML config.
 	}
 	else
 		tSonarData->addCallback(&tSonarHandler);
 
 	//"RangeFinder.Sonar.Data": class BlackboardDataRange (UUID: fa0b925f-d394-4efd-b8ff-8386442d6234)
+
+
+	///////////////////////////////////////////////////////////////////////////
+	// Odometry callback registration
+
+	tBatteryStateData = NULL;
+	tErr = getDataFromBlackboard<BlackboardDataBatteryState>(tBlackboard,
+			"MyRobot.BatteryState", tBatteryStateData);
+	if (tErr != OK) {
+		fprintf(stderr, "FATAL: Failed to get the battery state data from the blackboard!\n");
+		exit(-1);
+	}
+
+	tBatteryStateData->addCallback(&tBatteryStateHandler);
 
 
 	///////////////////////////////////////////////////////////////////////////
@@ -189,6 +202,26 @@ void ScitosBase::publish_sonar_config(const RangeData::Config* sonarConfig) {
 void ScitosBase::get_sonar_config(const RangeData::Config*& sonarConfig) {
 	sonarConfig = mSonarConfig;
 }
+
+
+void ScitosBase::publish_batteryState(float pVoltage, float pCurrent, int16_t pChargeState,
+		int16_t pRemainingTime, int16_t pChargerStatus) {
+	m_pVoltage = pVoltage;
+	m_pCurrent = pCurrent;
+	m_pChargeState = pChargeState;
+	m_pRemainingTime = pRemainingTime;
+	m_pChargerStatus = pChargerStatus;
+}
+
+void ScitosBase::get_batteryState(float& pVoltage, float& pCurrent, int16_t& pChargeState,
+		int16_t& pRemainingTime, int16_t& pChargerStatus) {
+	pVoltage = m_pVoltage;
+	pCurrent = m_pCurrent;
+	pChargeState = m_pChargeState;
+	pRemainingTime = m_pRemainingTime;
+	pChargerStatus = m_pChargerStatus;
+}
+
 
 
 ScitosBase::~ScitosBase() {

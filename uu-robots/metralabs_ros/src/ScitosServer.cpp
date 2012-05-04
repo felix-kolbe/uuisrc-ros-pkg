@@ -16,6 +16,7 @@
 #include <metralabs_ros/idAndFloat.h>
 #include <metralabs_ros/SchunkStatus.h>
 
+#include <diagnostic_msgs/DiagnosticStatus.h>
 #include <nav_msgs/Odometry.h>
 #include <sensor_msgs/Range.h>
 #include <sensor_msgs/JointState.h>
@@ -833,6 +834,59 @@ class RosScitosBase {
 		} // if sonar active
 
 	}
+
+//	private string objectToString(object o) {
+//		std::stringstream ss;
+//	}
+	void loop_diagnostics(ros::Publisher* diagnosticsPublisher) {
+		float pVoltage;
+		float pCurrent;
+		int16_t pChargeState;
+		int16_t pRemainingTime;
+		int16_t pChargerStatus;
+		m_base->get_batteryState(pVoltage, pCurrent, pChargeState, pRemainingTime, pChargerStatus);
+
+		diagnostic_msgs::DiagnosticStatus ds;
+		ds.level = diagnostic_msgs::DiagnosticStatus::OK;
+		ds.name = "Battery";
+		ds.hardware_id = "0a4fcec0-27ef-497a-93ba-db39808ec1af";
+
+#define 	VOLTAGE_ERROR_LEVEL	23		// TODO do me parameters
+#define 	VOLTAGE_WARN_LEVEL	24
+
+		if(pVoltage < VOLTAGE_ERROR_LEVEL && pChargerStatus == 0)
+			ds.level = diagnostic_msgs::DiagnosticStatus::ERROR;
+		else if(pVoltage < VOLTAGE_WARN_LEVEL && pChargerStatus == 0)
+			ds.level = diagnostic_msgs::DiagnosticStatus::WARN;
+
+		ds.values.resize(5);
+		std::stringstream ss;
+		ds.values[0].key = "Voltage";
+		ss << pVoltage << " V";
+		ds.values[0].value = ss.str();
+
+		ss.str("");
+		ds.values[1].key = "Current";
+		ss << pCurrent << " A";
+		ds.values[1].value = ss.str();
+
+		ss.str("");
+		ds.values[2].key = "ChargeState";
+		ss << pChargeState << " %";
+		ds.values[2].value = ss.str();
+
+		ss.str("");
+		ds.values[3].key = "RemainingTime";
+		ss << pRemainingTime << " min";
+		ds.values[3].value = ss.str();
+
+		ds.values[4].key = "ChargerStatus";
+		ds.values[4].value = pChargerStatus == 0 ? "unplugged" : "plugged";
+
+		/// publish status
+		diagnosticsPublisher->publish(ds);
+
+	}
     
     private:	
 	ros::NodeHandle m_node;
@@ -852,6 +906,18 @@ class RosScitosBase {
 		m_base->set_velocity(msg->linear.x, msg->angular.z);
 	}
 };
+
+
+
+void diagnosticsPublishingLoop(ros::NodeHandle& n, RosScitosBase& ros_scitos, ros::Publisher* diagnosticsPublisher) {
+	ros::Rate loop_rate(2);
+
+	while (n.ok()) {
+		ros_scitos.loop_diagnostics(diagnosticsPublisher);
+		// This will adjust as needed per iteration
+		loop_rate.sleep();
+	}
+}
 
 int main(int argc, char **argv)
 {
@@ -914,11 +980,14 @@ int main(int argc, char **argv)
 
 	ros::Subscriber command = n.subscribe("command", 1, &SchunkServer::cb_commandTrajectory, &server);
 
-  
-	ros::Rate loop_rate(30);
+
+	ros::Publisher m_diagnosticsPublisher = n.advertise<diagnostic_msgs::DiagnosticStatus> ("/diagnostics", 50);
+
+  	boost::thread(diagnosticsPublishingLoop, n, ros_scitos, &m_diagnosticsPublisher);
+
 
 	ROS_INFO("Initializing done, starting loop");
-
+	ros::Rate loop_rate(30);
 	while (n.ok()) {
 		ros::spinOnce();
 
@@ -929,7 +998,6 @@ int main(int argc, char **argv)
 		
 		// This will adjust as needed per iteration
 		loop_rate.sleep();
-
 	}
 
     base.setFeature(FEATURE_ARM, false);
