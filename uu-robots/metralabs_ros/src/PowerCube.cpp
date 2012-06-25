@@ -92,7 +92,8 @@ int PowerCube::pc_ack() {
 			if(!moduleConfig->status_flags.flags.home_ok && id + ID_OFFSET == 25) {
 				pc_ref(id); // start reference
 				ros::Duration(4).sleep(); // wait to finish reference
-				pc_set_target_acceleration(id, 0.200); // set gripper acceleration
+				pc_set_target_acceleration(id, 0.04); // set gripper acceleration
+				pc_set_target_velocity(id, 0.04);	// and velocity to a nice value
 			}
 		}
 
@@ -126,8 +127,10 @@ int PowerCube::pc_ref(int id) {
 	pc_ack(id);
 	mManipulator.ref(id + ID_OFFSET);
 											// TODO cleanly integrate this fix for our gripper.
-											if(id + ID_OFFSET == 25)
-												pc_set_target_acceleration(id, 0.200);
+											if(id + ID_OFFSET == 25) {
+												pc_set_target_acceleration(id, 0.04); // set gripper acceleration
+												pc_set_target_velocity(id, 0.04);	// and velocity to a nice value
+											}
 //	pc_ack(id);  TODO is this disturbing the gripper?
 	return 0;
 }
