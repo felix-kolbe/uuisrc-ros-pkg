@@ -11,6 +11,7 @@
 	
 	<!-- The Arm/Base node -->
 	<node name="metralabs_ros" pkg="metralabs_ros" type="ScitosServer" output="screen">
+	    <param name="scitos_config_file" type="string" value="/home/demo/SCITOS-G5_without_Head_config.xml" />
 	    <param name="disable_arm" type="bool" value="true" />
 	    <remap from="schunk_description" to="robot_description"/>
 	    <remap from="state" to="/schunk/trajectory/state" />

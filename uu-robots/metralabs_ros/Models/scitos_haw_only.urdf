@@ -25,14 +25,14 @@
   <link name="base_link">
     <!--Odometry origin, former called ScitosBase -->
     <visual>
-      <origin rpy="0 0 0" xyz="-0.075 0 0.29"/>
+      <origin rpy="0 0 0" xyz="-0.075 0 0.2915"/>
       <geometry>
         <cylinder length="0.583" radius="0.3085"/>
       </geometry>
       <material name="scitosblue"/>
     </visual>
     <collision>
-      <origin rpy="0 0 0" xyz="-0.075 0 0.34"/>
+      <origin rpy="0 0 0" xyz="-0.075 0 0.3415"/>
       <geometry>
         <cylinder length="0.683" radius="0.3702"/>
       </geometry>

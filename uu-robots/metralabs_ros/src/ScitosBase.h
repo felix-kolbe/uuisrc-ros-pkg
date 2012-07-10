@@ -24,6 +24,11 @@ class ScitosBase {
 	void get_sonar(std::vector<RangeData::Measurement>& measurements);
 	void publish_sonar_config(const RangeData::Config* sonarConfig);
 	void get_sonar_config(const RangeData::Config*& sonarConfig);
+
+	void publish_batteryState(float pVoltage, float pCurrent, int16_t pChargeState,
+			int16_t pRemainingTime, int16_t pChargerStatus);
+	void get_batteryState(float& pVoltage, float& pCurrent, int16_t& pChargeState,
+			int16_t& pRemainingTime, int16_t& pChargerStatus);
 	
 	void set_velocity(double v, double w);
 	void loop();
@@ -102,6 +107,39 @@ class ScitosBase {
 	    ScitosBase* m_base;
 	};
 
+
+    private:
+	class BatteryStateCallbackHandler : public BlackboardDataUpdateCallback
+	{
+	    public:
+		BatteryStateCallbackHandler(ScitosBase* base) : BlackboardDataUpdateCallback() {
+	    	m_base = base;
+	    }
+
+	    void set_base(ScitosBase* base) {
+	    	m_base = base;
+	    }
+
+	    private:
+	    // Implementation of BlackboardDataUpdateCallback
+	    void dataChanged(const BlackboardData* pData) {
+			const BlackboardDataBatteryState* tBatteryStateData = dynamic_cast<const BlackboardDataBatteryState*>(pData);
+			if (tBatteryStateData != NULL) {
+				MTime tTime;
+
+				m_base->publish_batteryState(
+						tBatteryStateData->getVoltage(),
+						tBatteryStateData->getCurrent(),
+						tBatteryStateData->getChargeState(),
+						tBatteryStateData->getRemainingTime(),
+						tBatteryStateData->getChargerStatus()
+						);
+			}
+	    }
+
+	    ScitosBase* m_base;
+	};
+
     private:
 	Application* tApp;
 	ClassFactory* tClassFactory;
@@ -110,8 +148,10 @@ class ScitosBase {
 	BlackboardDataOdometry* tOdometryData;
 	BlackboardDataVelocity* tVelocityData;
 	BlackboardDataRange* tSonarData;
+	BlackboardDataBatteryState* tBatteryStateData;
 	OdometryCallbackHandler tOdometryHandler;
 	SonarCallbackHandler tSonarHandler;
+	BatteryStateCallbackHandler tBatteryStateHandler;
 	
 	double m_x;
 	double m_y;
@@ -124,6 +164,12 @@ class ScitosBase {
 
 	std::vector<RangeData::Measurement> mRangeMeasurements;
 	const RangeData::Config* mSonarConfig;
+
+	float m_pVoltage;
+	float m_pCurrent;
+	int16_t m_pChargeState;
+	int16_t m_pRemainingTime;
+	int16_t m_pChargerStatus;
 
 
 };

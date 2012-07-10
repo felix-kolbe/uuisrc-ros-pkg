@@ -2,6 +2,10 @@
 #include <boost/thread.hpp>
 
 #include <ros/ros.h>
+#include <actionlib/server/simple_action_server.h>
+
+#include <dynamic_reconfigure/server.h>
+#include <metralabs_ros/ScitosG5Config.h>
 
 #include <urdf/model.h>
 #include <tf/transform_broadcaster.h>
@@ -15,6 +19,8 @@
 #include <metralabs_ros/idAndFloat.h>
 #include <metralabs_ros/SchunkStatus.h>
 
+#include <diagnostic_msgs/DiagnosticStatus.h>
+#include <diagnostic_msgs/DiagnosticArray.h>
 #include <nav_msgs/Odometry.h>
 #include <sensor_msgs/Range.h>
 #include <sensor_msgs/JointState.h>
@@ -23,6 +29,7 @@
 #include <trajectory_msgs/JointTrajectory.h>
 #include <trajectory_msgs/JointTrajectoryPoint.h>
 #include <pr2_controllers_msgs/JointTrajectoryControllerState.h>
+#include <control_msgs/FollowJointTrajectoryAction.h>
 
 #include <robot/RangeData.h>
 using namespace MetraLabs::robotic::robot;
@@ -39,11 +46,19 @@ using namespace MetraLabs::robotic::robot;
 #define FEATURE_ARM		( "EBC1_Enable24V" )
 #define FEATURE_SONAR	( "SonarsActive" )
 
+#define SLOWEST_REASONABLE_JOINT_SPEED	0.015f // the slowest reasonable speed for our joints (IMHO)
+#define TOO_SLOW	0.002f //
+
+
+
 class TrajectoryExecuter {
 
 public:
 
-	TrajectoryExecuter() {
+	TrajectoryExecuter(ros::NodeHandle& nh_, std::string action_server_name) :
+		as_(nh_, action_server_name, boost::bind(&TrajectoryExecuter::executeCB, this, _1), false),
+	    action_name_(action_server_name)
+	{
 		run = false;
 		arm = NULL;
 	}
@@ -66,6 +81,8 @@ public:
 		state_msg.actual.velocities.resize(nameToNumber.size());
 		state_msg.error.positions.resize(nameToNumber.size());
 		state_msg.error.velocities.resize(nameToNumber.size());
+
+	    as_.start();
 	}
 
 	void main() {
@@ -181,6 +198,7 @@ private:
 		}
 	}
 
+private: // by Felix
 	PowerCube* arm;
 	std::map<std::string, unsigned int> nameToNumber;
 	trajectory_msgs::JointTrajectory traj;
@@ -190,6 +208,166 @@ private:
 	boost::mutex mut;
 	pr2_controllers_msgs::JointTrajectoryControllerState state_msg;
 	ros::Publisher state_publisher;
+
+
+	// from action tutorial
+protected:
+	ros::NodeHandle nh_;
+	actionlib::SimpleActionServer<control_msgs::FollowJointTrajectoryAction> as_;
+	std::string action_name_;
+	// create messages that are used to published feedback/result
+	control_msgs::FollowJointTrajectoryFeedback feedback_;
+	control_msgs::FollowJointTrajectoryResult result_;
+
+public:
+	void executeCB(const control_msgs::FollowJointTrajectoryGoalConstPtr& goal)
+	{
+		bool success = true;
+		ros::Time trajStartTime = ros::Time::now();
+		const trajectory_msgs::JointTrajectory& traj = goal->trajectory;
+
+		// init feedback message
+		feedback_.joint_names = traj.joint_names;
+		int num_of_joints = traj.joint_names.size();
+		feedback_.desired.positions.resize(num_of_joints);
+		feedback_.desired.velocities.resize(num_of_joints);
+		feedback_.desired.accelerations.resize(num_of_joints);
+		feedback_.actual.positions.resize(num_of_joints);
+		feedback_.actual.velocities.resize(num_of_joints);
+		feedback_.actual.accelerations.resize(num_of_joints);
+		feedback_.error.positions.resize(num_of_joints);
+		feedback_.error.velocities.resize(num_of_joints);
+		feedback_.error.accelerations.resize(num_of_joints);
+
+		// for each trajectory step...
+		unsigned int steps = traj.points.size();
+		for (unsigned int step_i = 0; step_i < steps; step_i++) {
+
+			// check that preempt has not been requested by the client
+			if (as_.isPreemptRequested() || !ros::ok()) {
+				ROS_INFO("%s: Preempted", action_name_.c_str());
+				// set the action state to preempted
+				as_.setPreempted();
+				success = false;
+				arm->pc_normal_stop();
+				break;
+			}
+
+
+			// get the step target
+			const trajectory_msgs::JointTrajectoryPoint& trajStep = traj.points[step_i];
+			feedback_.desired = trajStep;
+
+			ROS_INFO_STREAM("Trajectory thread executing step "<<step_i<<"+1/"<<steps<<" until "<<trajStep.time_from_start<<" s / "<<(trajStartTime+trajStep.time_from_start));
+
+			// for each joint in step...
+			for (unsigned int joint_i = 0; joint_i < traj.joint_names.size(); joint_i++) {
+
+				int id = nameToNumber[traj.joint_names[joint_i]];
+
+				float accRad = trajStep.accelerations[joint_i];
+				float velRad = trajStep.velocities[joint_i];
+				float posRad = trajStep.positions[joint_i];
+
+//				ROS_INFO_STREAM("Moving module "<<id<<" with "<</*setiosflags(ios::fixed)<<*/ velRad<<" rad/s and "<<accRad<<" rad/s*s to "<<posRad<<" rad");
+
+
+/// don't go below +- def
+#define SIGN_TOLERANT_MAX(value, def)	( (value)==0 ? 0 : \
+											( \
+												(value)>0 ? \
+													std::max((value),  (def)) : \
+													std::min((value), -(def)) \
+											) \
+										)
+/// don't ...
+#define SIGN_TOLERANT_CUT(value, lim)	( (value)==0 ? 0 : \
+											( \
+												(value)>0 ? \
+													( (value) >  (lim) ? (value) : (0) ) : \
+													( (value) < -(lim) ? (value) : (0) ) \
+											) \
+										)
+
+//				velRad = SIGN_TOLERANT_CUT(velRad, TOO_SLOW);
+
+//				velRad = SIGN_TOLERANT_MAX(velRad, SLOWEST_REASONABLE_JOINT_SPEED);
+
+//				accRad = SIGN_TOLERANT_MAX(accRad, 0.43f);
+
+				accRad = 0.21;
+
+				if(step_i == steps-1) {
+					velRad = SLOWEST_REASONABLE_JOINT_SPEED;
+				}
+
+//				if(std::abs(velRad) < TOO_SLOW) {
+//					ROS_INFO_STREAM("Skipping module "<<id<<" due to too low velocity");
+//				}
+//				else {
+				ROS_INFO_STREAM("Moving module "<<id<<" with "<</*setiosflags(ios::fixed)<<*/ velRad<<" rad/s and "<<accRad<<" rad/s*s to "<<posRad<<" rad");
+
+#if SCHUNK_NOT_AMTEC != 0
+				// TODO schunk option of trajectory action callback
+//				arm->pc_move_velocity(id, velDeg);
+#else
+				arm->pc_set_target_acceleration(id, accRad);
+				arm->pc_set_target_velocity(id, velRad);
+				arm->pc_move_position(id, posRad);
+//				arm->pc_move_velocity(id, velRad);	TODO choose this if the velocity and time are calculated precisely
+
+//				if(step_i == steps-1) {
+//					ROS_INFO("LAST STEP, moving to position instead of with velocity.");
+//					arm->pc_move_position(id, posRad);
+//				}
+//				else {
+////					ROS_INFO("Velocity move.");
+//					arm->pc_move_velocity(id, velRad);
+//				}
+#endif
+//				}
+
+				// fill the joint individual feedback part
+				feedback_.actual.positions[id] = arm->mManipulator.getModules().at(id).status_pos;
+				feedback_.actual.velocities[id] = arm->mManipulator.getModules().at(id).status_vel;
+//				feedback_.actual.accelerations[id] = arm->mManipulator.getModules().at(id).status_acc / max_acceleration?; TODO
+			}
+
+			// publish the feedback
+			feedback_.header.stamp = ros::Time::now(); // TODO needed?
+			feedback_.actual.time_from_start = ros::Time::now() - trajStartTime;
+			as_.publishFeedback(feedback_);
+
+			// sleep until step time has passed
+			ros::Time::sleepUntil(trajStartTime + trajStep.time_from_start);
+		}//for each trajectory step...
+
+		if(success) {
+			ROS_INFO("Trajectory done, waiting for joints to stop...");
+			bool all_joints_stopped;
+			do {
+				ros::Duration(0.06).sleep();
+				all_joints_stopped = true;
+				for (unsigned int joint_i = 0; joint_i < traj.joint_names.size(); joint_i++) {
+					uint8_t moving, brake, foo;
+					float foofl;
+					arm->getModuleStatus(joint_i, &foo, &moving, &foo, &foo, &foo, &brake, &foo, &foo, &foo, &foofl);
+//					if(moving) {
+					if(!brake) {
+						all_joints_stopped = false;
+						break;
+					}
+//					if(arm->mManipulator.getModules().at(joint_i).status_vel == 0)
+//						all_joints_stopped = false;
+				}
+			} while (!all_joints_stopped);
+
+			result_.error_code = control_msgs::FollowJointTrajectoryResult::SUCCESSFUL;
+			ROS_INFO("%s: Succeeded", action_name_.c_str());
+			// set the action state to succeeded
+			as_.setSucceeded(result_);
+		}
+	}
 
 };
 
@@ -213,7 +391,10 @@ private:
 
 public:
 
-	SchunkServer(ros::NodeHandle &node) : m_node(node){
+	SchunkServer(ros::NodeHandle &node, std::string action_server_name) :
+		m_node(node),
+		m_executer(node, action_server_name)
+	{
 		init();
 	}
 
@@ -255,7 +436,7 @@ public:
 			m_schunkStatus.joints.push_back(status);
 		}
 
-//		m_executer.arm = &m_powerCube;
+//		m_executer.arm = &m_powerCube; 			changed them to private and args
 //		m_executer.nameToNumber = m_nameToNumber;
 		m_executer.init(m_node, &m_powerCube, m_nameToNumber);
 
@@ -323,7 +504,10 @@ public:
 
 	void cb_moveVelocity(const metralabs_ros::idAndFloat::ConstPtr& data)	{
 		ROS_INFO("cb_moveVelocity: [%d, %f]", data->id, data->value);
-		m_powerCube.pc_move_velocity(data->id, data->value);
+		if (data->value == 0.0)
+	        m_powerCube.pc_normal_stop(data->id);
+	    else
+		    m_powerCube.pc_move_velocity(data->id, data->value);
 	}
 
 	void cb_targetVelocity(const metralabs_ros::idAndFloat::ConstPtr& data)	{
@@ -345,11 +529,14 @@ public:
 		m_currentJointState.header.stamp = ros::Time::now();
 		for (unsigned int i=0;i<m_currentJointState.name.size(); i++) {
 #if SCHUNK_NOT_AMTEC != 0
-			m_currentJointState.position[i]=DEG_TO_RAD(m_powerCube.mManipulator.getModules().at(i).status_pos); // degree to rad
+			SCHUNKMotionManipulator::ModuleConfig modCfg = m_powerCube.mManipulator.getModules().at(i);
+			m_currentJointState.position[i]=DEG_TO_RAD(modCfg.status_pos);
+			m_currentJointState.velocity[i]=DEG_TO_RAD(modCfg.status_vel);
 #else
-			m_currentJointState.position[i]=m_powerCube.mManipulator.getModules().at(i).status_pos; // amtec protocol already in rad
+			AmtecManipulator::ModuleConfig modCfg = m_powerCube.mManipulator.getModules().at(i);
+			m_currentJointState.position[i]=modCfg.status_pos; // amtec protocol already in rad
+			m_currentJointState.velocity[i]=modCfg.status_vel;
 #endif
-			m_currentJointState.velocity[i]=0.0;
 		}
 		m_currentJointStatePublisher.publish(m_currentJointState);
 	}
@@ -373,7 +560,7 @@ public:
 		m_schunkStatusPublisher.publish(m_schunkStatus);
 	}
 
-	void targetJointStateCallbackPositionControl(const sensor_msgs::JointState::ConstPtr& data) {
+	void cb_targetJointStatePositionControl(const sensor_msgs::JointState::ConstPtr& data) {
 		// The "names" member says how many joints, the other members may be empty.
 		// Not all the joints have to be specified in the message
 		// and not all types must be filled
@@ -384,18 +571,31 @@ public:
 #endif
 
 		for (uint i=0;i<data.get()->name.size();i++) {
+			string joint_name = data.get()->name[i];
+			int joint_number = m_nameToNumber[joint_name];
+			ROS_INFO_STREAM("cb_PositionControl: joint "<<joint_name<<" (#"<<joint_number<<")");
+
 			m_powerCube.pc_set_currents_max();
-			if (data.get()->position.size()!=0)
-				m_powerCube.pc_move_position(m_nameToNumber[data.get()->name[i]],(data.get()->position[i]) / rad_to_degrees_needed);
-			if (data.get()->velocity.size()!=0)
-				m_powerCube.pc_set_target_velocity(m_nameToNumber[data.get()->name[i]],(data.get()->velocity[i]) / rad_to_degrees_needed);
-			if (data.get()->effort.size()!=0)
-				m_powerCube.pc_set_current(m_nameToNumber[data.get()->name[i]],(data.get()->effort[i]));
+			if (data.get()->position.size()!=0) {
+				double pos = data.get()->position[i] / rad_to_degrees_needed;
+				ROS_INFO_STREAM(" to position "<<pos);
+				m_powerCube.pc_move_position(joint_number, pos);
+			}
+			if (data.get()->velocity.size()!=0) {
+				double vel = data.get()->velocity[i] / rad_to_degrees_needed;
+				ROS_INFO_STREAM(" with velocity "<<vel);
+				m_powerCube.pc_set_target_velocity(joint_number, vel);
+			}
+			if (data.get()->effort.size()!=0) {
+				double eff = data.get()->effort[i];
+				ROS_INFO_STREAM(" with effort "<<eff);
+				m_powerCube.pc_set_current(joint_number, eff);
+			}
 
 		}
 	}
 
-	void targetJointStateCallbackVelocityControl(const sensor_msgs::JointState::ConstPtr& data) {
+	void cb_targetJointStateVelocityControl(const sensor_msgs::JointState::ConstPtr& data) {
 #if SCHUNK_NOT_AMTEC != 0
 		float rad_to_degrees_needed = RAD_TO_DEG(1);
 #else
@@ -407,25 +607,30 @@ public:
 		// and not all types must be filled
 //		m_powerCube.pc_ack();
 		for (uint i=0;i<data.get()->name.size();i++) {
+			string joint_name = data.get()->name[i];
+			int joint_number = m_nameToNumber[joint_name];
+			ROS_INFO_STREAM("cb_VelocityControl: joint "<<joint_name<<" (#"<<joint_number<<")");
 
 //			m_powerCube.pc_set_currents_max();
 
-//			if (data.get()->position.size()!=0)
-//				m_powerCube.pc_move_position(m_nameToNumber[data.get()->name[i]],(data.get()->position[i]) / rad_to_degrees_needed);
-//
 			if (data.get()->velocity.size()!=0) {
-				if (data.get()->velocity[i] == 0.0)
-			        m_powerCube.pc_normal_stop(m_nameToNumber[data.get()->name[i]]);
+				double vel = data.get()->velocity[i] / rad_to_degrees_needed;
+				ROS_INFO_STREAM(" with velocity "<<vel);
+				if (vel == 0.0)
+			        m_powerCube.pc_normal_stop(joint_number);
 			    else
-				    m_powerCube.pc_move_velocity(m_nameToNumber[data.get()->name[i]],(data.get()->velocity[i]) / rad_to_degrees_needed);
+				    m_powerCube.pc_move_velocity(joint_number, vel);
 			}
-			if (data.get()->effort.size()!=0)
-				m_powerCube.pc_set_current(m_nameToNumber[data.get()->name[i]],(data.get()->effort[i]));
+			if (data.get()->effort.size()!=0) {
+				double eff = data.get()->effort[i];
+				ROS_INFO_STREAM(" with effort "<<eff);
+				m_powerCube.pc_set_current(joint_number, eff);
+			}
 
 		}
 	}
 
-	void commandTrajectory(const trajectory_msgs::JointTrajectory traj) {
+	void cb_commandTrajectory(const trajectory_msgs::JointTrajectory traj) {
 		ROS_INFO("Schunk Server: received a new trajectory");
 		m_executer.stop();
 		while (! m_executer.is_waiting() ) {
@@ -633,7 +838,82 @@ class RosScitosBase {
 		} // if sonar active
 
 	}
-    
+
+//	private string objectToString(object o) {
+//		std::stringstream ss;
+//	}
+	void loop_diagnostics(ros::Publisher* diagnosticsPublisher) {
+		float pVoltage;
+		float pCurrent;
+		int16_t pChargeState;
+		int16_t pRemainingTime;
+		int16_t pChargerStatus;
+		m_base->get_batteryState(pVoltage, pCurrent, pChargeState, pRemainingTime, pChargerStatus);
+
+		diagnostic_msgs::DiagnosticStatus batteryStatus;
+		batteryStatus.level = diagnostic_msgs::DiagnosticStatus::OK;
+		batteryStatus.name = "Battery";
+		batteryStatus.message = "..tbd..";
+		batteryStatus.hardware_id = "0a4fcec0-27ef-497a-93ba-db39808ec1af";
+
+#define 	VOLTAGE_ERROR_LEVEL	23		// TODO do me parameters
+#define 	VOLTAGE_WARN_LEVEL	24
+
+		if(pVoltage < VOLTAGE_ERROR_LEVEL && pChargerStatus == 0)
+			batteryStatus.level = diagnostic_msgs::DiagnosticStatus::ERROR;
+		else if(pVoltage < VOLTAGE_WARN_LEVEL && pChargerStatus == 0)
+			batteryStatus.level = diagnostic_msgs::DiagnosticStatus::WARN;
+
+		batteryStatus.values.resize(5);
+		std::stringstream ss;
+		batteryStatus.values[0].key = "Voltage";
+		ss << pVoltage << " V";
+		batteryStatus.values[0].value = ss.str();
+
+		ss.str("");
+		batteryStatus.values[1].key = "Current";
+		ss << pCurrent << " A";
+		batteryStatus.values[1].value = ss.str();
+
+		ss.str("");
+		batteryStatus.values[2].key = "ChargeState";
+		ss << pChargeState << " %";
+		batteryStatus.values[2].value = ss.str();
+
+		ss.str("");
+		batteryStatus.values[3].key = "RemainingTime";
+		ss << pRemainingTime << " min";
+		batteryStatus.values[3].value = ss.str();
+
+		batteryStatus.values[4].key = "ChargerStatus";
+		batteryStatus.values[4].value = pChargerStatus == 0 ? "unplugged" : "plugged";
+
+		/// combine and publish statii as array
+		diagnostic_msgs::DiagnosticArray diagArray;
+		diagArray.status.push_back(batteryStatus);
+		diagnosticsPublisher->publish(diagArray);
+
+	}
+
+	void dynamic_reconfigure_callback(metralabs_ros::ScitosG5Config &config, uint32_t level) {
+		// I wrote this macro because I couldn't find a way to read the configs parameters generically,
+		// and with this macro the actual feature name only has to be named once. Improvements welcome.
+#define MAKRO_SET_FEATURE(NAME)	\
+			ROS_INFO("Setting feature %s to %s", #NAME, config.NAME?"True":"False"); \
+			m_base->setFeature(#NAME, config.NAME)
+
+		MAKRO_SET_FEATURE(EBC0_Enable5V);
+		MAKRO_SET_FEATURE(EBC0_Enable12V);
+		MAKRO_SET_FEATURE(EBC0_Enable24V);
+		MAKRO_SET_FEATURE(EBC1_Enable5V);
+		MAKRO_SET_FEATURE(EBC1_Enable12V);
+		MAKRO_SET_FEATURE(EBC1_Enable24V);
+		MAKRO_SET_FEATURE(FreeRunMode);
+		MAKRO_SET_FEATURE(SonarsActive);
+		MAKRO_SET_FEATURE(StatusDisplayKnobLock);
+		MAKRO_SET_FEATURE(StatusDisplayLED);
+	}
+
     private:	
 	ros::NodeHandle m_node;
 	ScitosBase* m_base;
@@ -653,29 +933,48 @@ class RosScitosBase {
 	}
 };
 
+
+void diagnosticsPublishingLoop(ros::NodeHandle& n, RosScitosBase& ros_scitos, ros::Publisher* diagnosticsPublisher) {
+	ros::Rate loop_rate(2);
+
+	while (n.ok()) {
+		ros_scitos.loop_diagnostics(diagnosticsPublisher);
+		// This will adjust as needed per iteration
+		loop_rate.sleep();
+	}
+}
+
 int main(int argc, char **argv)
 {
 	ros::init(argc, argv, "metralabs_ros");
 	ros::NodeHandle n;
 	ros::NodeHandle n_private("~");
 
+	std::string action_server_name = "schunk/follow_joint_trajectory";
+
+	/// read parameters
+
 	bool disable_arm;
 	n_private.param("disable_arm", disable_arm, false);
 
+	string scitos_config_file;
+	n_private.param<string>("scitos_config_file", scitos_config_file,
+			"/opt/MetraLabs/MLRobotic/etc/config/SCITOS-G5_without_Head_config.xml");
+
 	ros::Duration(0.9).sleep(); // wait to let the running me close its scitos connection
 
-	ScitosBase base(//"/opt/MetraLabs/MLRobotic/etc/config/"
-//			"/home/demo/SCITOS-G5_without_Head_config.xml", argc, argv);
-			"/home/demo/SCITOS-G5_without_Head_config (low noise).xml", argc, argv);
+	/// start robot & node components
+
+	ScitosBase base(scitos_config_file.c_str(), argc, argv);
 
 	if(!disable_arm) {
 		base.setFeature(FEATURE_ARM, true);
-		ros::Duration(0.3).sleep(); // let arm start up
+		ros::Duration(2.3).sleep(); // let arm start up
 	}
 
 	RosScitosBase ros_scitos(n, &base);
 
-	SchunkServer server(n);
+	SchunkServer schunkServer(n, action_server_name);
 
 	/*
 	 * /schunk/position/joint_state -> publishes joint state for kinematics modules
@@ -684,44 +983,64 @@ int main(int argc, char **argv)
 	 * /schunk/status -> to publish all the statuses
 	 */
 
-	ros::Subscriber targetJointStateSubscriberPositionControl = n.subscribe("/schunk/target_pc/joint_states", 1, &SchunkServer::targetJointStateCallbackPositionControl, &server);
-	ros::Subscriber targetJointStateSubscriberVelocityControl = n.subscribe("/schunk/target_vc/joint_states", 1, &SchunkServer::targetJointStateCallbackVelocityControl, &server);
+	/// intialize topics for robot and arm
 
+	ros::Subscriber targetJointStateSubscriberPositionControl = n.subscribe("/schunk/target_pc/joint_states", 1, &SchunkServer::cb_targetJointStatePositionControl, &schunkServer);
+	ros::Subscriber targetJointStateSubscriberVelocityControl = n.subscribe("/schunk/target_vc/joint_states", 1, &SchunkServer::cb_targetJointStateVelocityControl, &schunkServer);
 
-	ros::Subscriber emergency = n.subscribe("/emergency", 1, &SchunkServer::cb_emergency, &server);
-	ros::Subscriber stop = n.subscribe("/stop", 1, &SchunkServer::cb_stop, &server);
-	ros::Subscriber firstRef = n.subscribe("/firstRef", 1, &SchunkServer::cb_firstRef, &server);
-	ros::Subscriber ack = n.subscribe("/ack", 1, &SchunkServer::cb_ack, &server);
-	ros::Subscriber ackAll = n.subscribe("/ackAll", 1, &SchunkServer::cb_ackAll, &server);
-	ros::Subscriber ref = n.subscribe("/ref", 1, &SchunkServer::cb_ref, &server);
-	ros::Subscriber refAll = n.subscribe("/refAll", 1, &SchunkServer::cb_refAll, &server);
-	ros::Subscriber current = n.subscribe("/current", 1, &SchunkServer::cb_current, &server);
-	ros::Subscriber currentsMaxAll = n.subscribe("/currentsMaxAll", 1, &SchunkServer::cb_currentsMaxAll, &server);
-	ros::Subscriber movePosition = n.subscribe("/movePosition", 1, &SchunkServer::cb_movePosition, &server);
+	// those topics which must be received multiple times (for each joint) got a 10 for their message buffer
+	ros::Subscriber emergency = n.subscribe("/emergency", 1, &SchunkServer::cb_emergency, &schunkServer);
+	ros::Subscriber stop = n.subscribe("/stop", 1, &SchunkServer::cb_stop, &schunkServer);
+	ros::Subscriber firstRef = n.subscribe("/firstRef", 1, &SchunkServer::cb_firstRef, &schunkServer);
+	ros::Subscriber ack = n.subscribe("/ack", 10, &SchunkServer::cb_ack, &schunkServer);
+	ros::Subscriber ackAll = n.subscribe("/ackAll", 1, &SchunkServer::cb_ackAll, &schunkServer);
+	ros::Subscriber ref = n.subscribe("/ref", 10, &SchunkServer::cb_ref, &schunkServer);
+	ros::Subscriber refAll = n.subscribe("/refAll", 1, &SchunkServer::cb_refAll, &schunkServer);
+	ros::Subscriber current = n.subscribe("/current", 10, &SchunkServer::cb_current, &schunkServer);
+	ros::Subscriber currentsMaxAll = n.subscribe("/currentsMaxAll", 1, &SchunkServer::cb_currentsMaxAll, &schunkServer);
+	ros::Subscriber movePosition = n.subscribe("/movePosition", 10, &SchunkServer::cb_movePosition, &schunkServer);
 //	n.subscribe("/movePositions", 1, &C_Callbacks::cb_movePositions, &listener);
-	ros::Subscriber moveVelocity = n.subscribe("/moveVelocity", 1, &SchunkServer::cb_moveVelocity, &server);
-	ros::Subscriber targetVelocity = n.subscribe("/targetVelocity", 1, &SchunkServer::cb_targetVelocity, &server);
-	ros::Subscriber targetAcceleration = n.subscribe("/targetAcceleration", 1, &SchunkServer::cb_targetAcceleration, &server);
+	ros::Subscriber moveVelocity = n.subscribe("/moveVelocity", 10, &SchunkServer::cb_moveVelocity, &schunkServer);
+	ros::Subscriber targetVelocity = n.subscribe("/targetVelocity", 10, &SchunkServer::cb_targetVelocity, &schunkServer);
+	ros::Subscriber targetAcceleration = n.subscribe("/targetAcceleration", 10, &SchunkServer::cb_targetAcceleration, &schunkServer);
 //	ros::Subscriber startPosition = n.subscribe("/startPosition", 1, &PubsAndSubs::cb_startPosition, &services);
 
-	ros::Subscriber command = n.subscribe("command", 1, &SchunkServer::commandTrajectory, &server);
+	ros::Subscriber command = n.subscribe("command", 1, &SchunkServer::cb_commandTrajectory, &schunkServer);
 
-  
-	ros::Rate loop_rate(30);
+
+	/// intialize diagnostics
+
+	ros::Publisher m_diagnosticsPublisher = n.advertise<diagnostic_msgs::DiagnosticArray> ("/diagnostics", 50);
+
+  	boost::thread(diagnosticsPublishingLoop, n, ros_scitos, &m_diagnosticsPublisher);
+
+
+  	/// intialize dyn reconfigure
+
+	dynamic_reconfigure::Server<metralabs_ros::ScitosG5Config> dynamicReconfigureServer;
+	dynamic_reconfigure::Server<metralabs_ros::ScitosG5Config>::CallbackType f;
+
+	f = boost::bind(&RosScitosBase::dynamic_reconfigure_callback, ros_scitos, _1, _2);
+	dynamicReconfigureServer.setCallback(f);
+
+//	ROS_INFO("Spinning node");
+//	ros::spin();
+
+
+	/// start main loop
 
 	ROS_INFO("Initializing done, starting loop");
-
+	ros::Rate loop_rate(30);
 	while (n.ok()) {
 		ros::spinOnce();
 
-		server.publishCurrentJointState();
-		server.publishSchunkStatus();
+		schunkServer.publishCurrentJointState();
+		schunkServer.publishSchunkStatus();
 
 		ros_scitos.loop();
 		
 		// This will adjust as needed per iteration
 		loop_rate.sleep();
-
 	}
 
     base.setFeature(FEATURE_ARM, false);
