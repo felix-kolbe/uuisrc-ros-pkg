@@ -5,17 +5,19 @@
 <!-- invisible joint center for separating DH transformation and physical components -->
 <xacro:macro name="DH" params="name">
 <link name="${name}">
-  <!--- -><visual>
+  <!-- - ->
+  <visual>
     <geometry>
       <cylinder radius="0.030" length="0.100"/>
     </geometry>
     <material name="black"/>
-  </visual><!- - -->
+  </visual>
+  <!- - -->
 </link>
 </xacro:macro>
 
 
-<!-- -->
+<!-- schunk PRL model joint -->
 <xacro:macro name="PRL" params="name type">
 <link name="${name}" >
     <visual>
@@ -34,7 +36,7 @@
 </xacro:macro>
 
 
-<!-- orthogonal connector -->
+<!-- general connector with definable shape -->
 TODO: remove macro? or disable collision in another way
 <xacro:macro name="Connector" params="name *shape">
 <link name="${name}">
@@ -46,14 +48,17 @@ TODO: remove macro? or disable collision in another way
     <material name="black"/>
   </visual>
 
-<!--  <collision>
+<!--
+  <collision>
     <geometry>
       <xacro:insert_block name="shape" />
     </geometry>
-  </collision>-->
+  </collision>
+-->
 </link>
 </xacro:macro>
 
+<!-- long flat connector between joints -->
 <xacro:macro name="Connector_long" params="name length">
 <link name="${name}" >
     <visual>

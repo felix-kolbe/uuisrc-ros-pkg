@@ -23,4 +23,10 @@ Plattform mit Arm:
 xacro: 
 rosrun xacro xacro.py model.xacro > model.urdf
 
+bzw. mithilfe des Skriptes:
+
+./convert_xacro.sh [default=scitos_haw_schunk]
+./convert_xacro.sh scitos_haw_only
+
+
 http://www.ros.org/wiki/urdf/Tutorials/Using%20Xacro%20to%20Clean%20Up%20a%20URDF%20File

@@ -16,9 +16,7 @@
 <xacro:property name="schunk_base_offset_rear" value="-0.252" /><!--arm mounted in rear position-->
 
 <!--restraint-->
-<xacro:property name="max_vel" value="0.43" /> <!--abgerundete geschwindigkeit des langsamsten gelenks-->
-
- <!--quark: 2.88r/s ~= 16°/s was etwa die Hälfte der mittleren Maximalgeschwindigkeit der Drehgelenke ist... halt moment, 2.88 muss Quark sein.. -->
+<xacro:property name="max_vel" value="0.43" /> <!--rounded down maximum velocity of slowest joint -->
 
 
 

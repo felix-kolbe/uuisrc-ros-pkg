@@ -26,14 +26,14 @@
   <link name="base_link">
     <!--Odometry origin, former called ScitosBase -->
     <visual>
-      <origin rpy="0 0 0" xyz="-0.075 0 0.29"/>
+      <origin rpy="0 0 0" xyz="-0.075 0 0.2915"/>
       <geometry>
         <cylinder length="0.583" radius="0.3085"/>
       </geometry>
       <material name="scitosblue"/>
     </visual>
     <collision>
-      <origin rpy="0 0 0" xyz="-0.075 0 0.34"/>
+      <origin rpy="0 0 0" xyz="-0.075 0 0.3415"/>
       <geometry>
         <cylinder length="0.683" radius="0.3702"/>
       </geometry>
@@ -66,7 +66,7 @@
   </joint>
   <joint name="DH_1_2" type="revolute">
     <!-- ~center of base swivel joint ID20 -->
-    <!-- the ~center means: both z of this and below added must equal 0.268 -->
+    <!-- the ~center means: both z of this and below added must equal 0.268 to match reality -->
     <origin rpy="0 0 0" xyz="0 0 0.120"/>
     <parent link="DH1"/>
     <child link="DH2"/>
@@ -126,12 +126,14 @@
     <mimic joint="GR_Fpos" multiplier="0.5" offset="0"/>
   </joint>
   <link name="DH1">
-    <!--- -><visual>
+    <!-- - ->
+  <visual>
     <geometry>
       <cylinder radius="0.030" length="0.100"/>
     </geometry>
     <material name="black"/>
-  </visual><!- - -->
+  </visual>
+  <!- - -->
   </link>
   <!-- base of arm -->
   <link name="DH2">
@@ -212,11 +214,13 @@
       </geometry>
       <material name="black"/>
     </visual>
-    <!--  <collision>
+    <!--
+  <collision>
     <geometry>
       <xacro:insert_block name="shape" />
     </geometry>
-  </collision>-->
+  </collision>
+-->
   </link>
   <joint name="DH1_ConnBase" type="fixed">
     <origin rpy="0 0 0" xyz="0 0 0"/>
