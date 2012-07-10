@@ -13,12 +13,9 @@ msg_gen/
 *.o
 _*
 .settings
-uu-controllers/dynamic_window/cmake_install.cmake
 *.pos
-uu-controllers/schunk_gui/history
-uu-controllers/schunk_gui/gui2_altern.glade
-uu-controllers/schunk_gui/baks/
 *.lsa
 ROS_NOBUILD
 ignore/
 *.stack
+cmake_install.cmake
