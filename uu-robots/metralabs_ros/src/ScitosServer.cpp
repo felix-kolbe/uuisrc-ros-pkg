@@ -4,6 +4,9 @@
 #include <ros/ros.h>
 #include <actionlib/server/simple_action_server.h>
 
+#include <dynamic_reconfigure/server.h>
+#include <metralabs_ros/ScitosG5Config.h>
+
 #include <urdf/model.h>
 #include <tf/transform_broadcaster.h>
 
@@ -891,7 +894,26 @@ class RosScitosBase {
 		diagnosticsPublisher->publish(diagArray);
 
 	}
-    
+
+	void dynamic_reconfigure_callback(metralabs_ros::ScitosG5Config &config, uint32_t level) {
+		// I wrote this macro because I couldn't find a way to read the configs parameters generically,
+		// and with this macro the actual feature name only has to be named once. Improvements welcome.
+#define MAKRO_SET_FEATURE(NAME)	\
+			ROS_INFO("Setting feature %s to %s", #NAME, config.NAME?"True":"False"); \
+			m_base->setFeature(#NAME, config.NAME)
+
+		MAKRO_SET_FEATURE(EBC0_Enable5V);
+		MAKRO_SET_FEATURE(EBC0_Enable12V);
+		MAKRO_SET_FEATURE(EBC0_Enable24V);
+		MAKRO_SET_FEATURE(EBC1_Enable5V);
+		MAKRO_SET_FEATURE(EBC1_Enable12V);
+		MAKRO_SET_FEATURE(EBC1_Enable24V);
+		MAKRO_SET_FEATURE(FreeRunMode);
+		MAKRO_SET_FEATURE(SonarsActive);
+		MAKRO_SET_FEATURE(StatusDisplayKnobLock);
+		MAKRO_SET_FEATURE(StatusDisplayLED);
+	}
+
     private:	
 	ros::NodeHandle m_node;
 	ScitosBase* m_base;
@@ -910,7 +932,6 @@ class RosScitosBase {
 		m_base->set_velocity(msg->linear.x, msg->angular.z);
 	}
 };
-
 
 
 void diagnosticsPublishingLoop(ros::NodeHandle& n, RosScitosBase& ros_scitos, ros::Publisher* diagnosticsPublisher) {
@@ -953,7 +974,7 @@ int main(int argc, char **argv)
 
 	RosScitosBase ros_scitos(n, &base);
 
-	SchunkServer server(n, action_server_name);
+	SchunkServer schunkServer(n, action_server_name);
 
 	/*
 	 * /schunk/position/joint_state -> publishes joint state for kinematics modules
@@ -962,41 +983,59 @@ int main(int argc, char **argv)
 	 * /schunk/status -> to publish all the statuses
 	 */
 
-	ros::Subscriber targetJointStateSubscriberPositionControl = n.subscribe("/schunk/target_pc/joint_states", 1, &SchunkServer::cb_targetJointStatePositionControl, &server);
-	ros::Subscriber targetJointStateSubscriberVelocityControl = n.subscribe("/schunk/target_vc/joint_states", 1, &SchunkServer::cb_targetJointStateVelocityControl, &server);
+	/// intialize topics for robot and arm
+
+	ros::Subscriber targetJointStateSubscriberPositionControl = n.subscribe("/schunk/target_pc/joint_states", 1, &SchunkServer::cb_targetJointStatePositionControl, &schunkServer);
+	ros::Subscriber targetJointStateSubscriberVelocityControl = n.subscribe("/schunk/target_vc/joint_states", 1, &SchunkServer::cb_targetJointStateVelocityControl, &schunkServer);
 
 	// those topics which must be received multiple times (for each joint) got a 10 for their message buffer
-	ros::Subscriber emergency = n.subscribe("/emergency", 1, &SchunkServer::cb_emergency, &server);
-	ros::Subscriber stop = n.subscribe("/stop", 1, &SchunkServer::cb_stop, &server);
-	ros::Subscriber firstRef = n.subscribe("/firstRef", 1, &SchunkServer::cb_firstRef, &server);
-	ros::Subscriber ack = n.subscribe("/ack", 10, &SchunkServer::cb_ack, &server);
-	ros::Subscriber ackAll = n.subscribe("/ackAll", 1, &SchunkServer::cb_ackAll, &server);
-	ros::Subscriber ref = n.subscribe("/ref", 10, &SchunkServer::cb_ref, &server);
-	ros::Subscriber refAll = n.subscribe("/refAll", 1, &SchunkServer::cb_refAll, &server);
-	ros::Subscriber current = n.subscribe("/current", 10, &SchunkServer::cb_current, &server);
-	ros::Subscriber currentsMaxAll = n.subscribe("/currentsMaxAll", 1, &SchunkServer::cb_currentsMaxAll, &server);
-	ros::Subscriber movePosition = n.subscribe("/movePosition", 10, &SchunkServer::cb_movePosition, &server);
+	ros::Subscriber emergency = n.subscribe("/emergency", 1, &SchunkServer::cb_emergency, &schunkServer);
+	ros::Subscriber stop = n.subscribe("/stop", 1, &SchunkServer::cb_stop, &schunkServer);
+	ros::Subscriber firstRef = n.subscribe("/firstRef", 1, &SchunkServer::cb_firstRef, &schunkServer);
+	ros::Subscriber ack = n.subscribe("/ack", 10, &SchunkServer::cb_ack, &schunkServer);
+	ros::Subscriber ackAll = n.subscribe("/ackAll", 1, &SchunkServer::cb_ackAll, &schunkServer);
+	ros::Subscriber ref = n.subscribe("/ref", 10, &SchunkServer::cb_ref, &schunkServer);
+	ros::Subscriber refAll = n.subscribe("/refAll", 1, &SchunkServer::cb_refAll, &schunkServer);
+	ros::Subscriber current = n.subscribe("/current", 10, &SchunkServer::cb_current, &schunkServer);
+	ros::Subscriber currentsMaxAll = n.subscribe("/currentsMaxAll", 1, &SchunkServer::cb_currentsMaxAll, &schunkServer);
+	ros::Subscriber movePosition = n.subscribe("/movePosition", 10, &SchunkServer::cb_movePosition, &schunkServer);
 //	n.subscribe("/movePositions", 1, &C_Callbacks::cb_movePositions, &listener);
-	ros::Subscriber moveVelocity = n.subscribe("/moveVelocity", 10, &SchunkServer::cb_moveVelocity, &server);
-	ros::Subscriber targetVelocity = n.subscribe("/targetVelocity", 10, &SchunkServer::cb_targetVelocity, &server);
-	ros::Subscriber targetAcceleration = n.subscribe("/targetAcceleration", 10, &SchunkServer::cb_targetAcceleration, &server);
+	ros::Subscriber moveVelocity = n.subscribe("/moveVelocity", 10, &SchunkServer::cb_moveVelocity, &schunkServer);
+	ros::Subscriber targetVelocity = n.subscribe("/targetVelocity", 10, &SchunkServer::cb_targetVelocity, &schunkServer);
+	ros::Subscriber targetAcceleration = n.subscribe("/targetAcceleration", 10, &SchunkServer::cb_targetAcceleration, &schunkServer);
 //	ros::Subscriber startPosition = n.subscribe("/startPosition", 1, &PubsAndSubs::cb_startPosition, &services);
 
-	ros::Subscriber command = n.subscribe("command", 1, &SchunkServer::cb_commandTrajectory, &server);
+	ros::Subscriber command = n.subscribe("command", 1, &SchunkServer::cb_commandTrajectory, &schunkServer);
 
+
+	/// intialize diagnostics
 
 	ros::Publisher m_diagnosticsPublisher = n.advertise<diagnostic_msgs::DiagnosticArray> ("/diagnostics", 50);
 
   	boost::thread(diagnosticsPublishingLoop, n, ros_scitos, &m_diagnosticsPublisher);
 
 
+  	/// intialize dyn reconfigure
+
+	dynamic_reconfigure::Server<metralabs_ros::ScitosG5Config> dynamicReconfigureServer;
+	dynamic_reconfigure::Server<metralabs_ros::ScitosG5Config>::CallbackType f;
+
+	f = boost::bind(&RosScitosBase::dynamic_reconfigure_callback, ros_scitos, _1, _2);
+	dynamicReconfigureServer.setCallback(f);
+
+//	ROS_INFO("Spinning node");
+//	ros::spin();
+
+
+	/// start main loop
+
 	ROS_INFO("Initializing done, starting loop");
 	ros::Rate loop_rate(30);
 	while (n.ok()) {
 		ros::spinOnce();
 
-		server.publishCurrentJointState();
-		server.publishSchunkStatus();
+		schunkServer.publishCurrentJointState();
+		schunkServer.publishSchunkStatus();
 
 		ros_scitos.loop();
 		
