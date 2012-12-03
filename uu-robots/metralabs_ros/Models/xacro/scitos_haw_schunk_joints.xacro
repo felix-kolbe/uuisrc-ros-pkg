@@ -14,7 +14,7 @@
     <parent link="DH1"/>
     <child link="DH2"/>
     <axis xyz="0 0 -1" />
-    <limit lower="-3.141593" upper="3.141593" effort="2" velocity="${max_vel}" />
+    <limit lower="-3.141593" upper="3.141593" effort="2" velocity="0.437" />
  </joint>
  <joint name="DH_2_3" type="revolute">
 	<!-- center of first pitch joint ID21 -->
@@ -22,7 +22,7 @@
     <parent link="DH2"/>
     <child link="DH3"/>
     <axis xyz="0 0 -1" />
-    <limit lower="-2.024580" upper="2.024580" effort="2" velocity="${max_vel}" />
+    <limit lower="-2.024580" upper="2.024580" effort="2" velocity="0.438" />
  </joint>
  <joint name="DH_3_4" type="revolute">
     <!-- center of second pitch joint ID22 -->
@@ -30,7 +30,7 @@
     <parent link="DH3"/>
     <child link="DH4"/>
     <axis xyz="0 0 -1" />
-    <limit lower="-2.740166" upper="2.740166" effort="2" velocity="${max_vel}" />
+    <limit lower="-2.740166" upper="2.740166" effort="2" velocity="0.436" />
  </joint>
  <joint name="DH_4_5" type="revolute">
 	<!-- center of third pitch joint ID23 -->
@@ -38,7 +38,7 @@
     <parent link="DH4"/>
     <child link="DH5"/>
     <axis xyz="0 0 -1" />
-    <limit lower="-2.373644" upper="2.286380" effort="2" velocity="${max_vel}" />
+    <limit lower="-2.373644" upper="2.286380" effort="2" velocity="0.486" />
  </joint>
  <joint name="DH_5_6" type="revolute">
 	<!-- center of hand roll joint ID24 -->
@@ -46,7 +46,7 @@
     <parent link="DH5"/>
     <child link="DH6"/>
     <axis xyz="0 0 -1" />
-    <limit lower="-3.143321" upper="3.143321" effort="2" velocity="${max_vel}" />
+    <limit lower="-3.143321" upper="3.143321" effort="2" velocity="0.872" />
  </joint>
  <joint name="DH_6_GR" type="fixed">
     <origin xyz="0 0 0.130" rpy="0 ${-0.25*tau} 0"/>
