@@ -51,6 +51,8 @@ using namespace MetraLabs::robotic::robot;
 
 
 
+
+
 class TrajectoryExecuter {
 
 public:
@@ -898,7 +900,7 @@ class RosScitosBase {
 	void dynamic_reconfigure_callback(metralabs_ros::ScitosG5Config &config, uint32_t level) {
 		// I wrote this macro because I couldn't find a way to read the configs parameters generically,
 		// and with this macro the actual feature name only has to be named once. Improvements welcome.
-#define MAKRO_SET_FEATURE(NAME)	\
+		#define MAKRO_SET_FEATURE(NAME)	\
 			ROS_INFO("Setting feature %s to %s", #NAME, config.NAME?"True":"False"); \
 			m_base->setFeature(#NAME, config.NAME)
 
@@ -912,6 +914,29 @@ class RosScitosBase {
 		MAKRO_SET_FEATURE(SonarsActive);
 		MAKRO_SET_FEATURE(StatusDisplayKnobLock);
 		MAKRO_SET_FEATURE(StatusDisplayLED);
+
+		ROS_DEBUG("Now reading again: (why is this rubbish?)");	// TODO fix me
+		metralabs_ros::ScitosG5Config configg;
+		get_features(configg);
+	}
+
+	void get_features(metralabs_ros::ScitosG5Config &config) {
+		// I wrote this macro because I couldn't find a way to read the configs parameters generically,
+		// and with this macro the actual feature name only has to be named once. Improvements welcome.
+		#define MAKRO_GET_FEATURE(NAME)	\
+			ROS_DEBUG("Current hardware feature %s is %s", #NAME, config.NAME?"True":"False"); \
+			config.NAME = m_base->getFeature<typeof(config.NAME)>(std::string(#NAME))
+
+		MAKRO_GET_FEATURE(EBC0_Enable5V);
+		MAKRO_GET_FEATURE(EBC0_Enable12V);
+		MAKRO_GET_FEATURE(EBC0_Enable24V);
+		MAKRO_GET_FEATURE(EBC1_Enable5V);
+		MAKRO_GET_FEATURE(EBC1_Enable12V);
+		MAKRO_GET_FEATURE(EBC1_Enable24V);
+		MAKRO_GET_FEATURE(FreeRunMode);
+		MAKRO_GET_FEATURE(SonarsActive);
+		MAKRO_GET_FEATURE(StatusDisplayKnobLock);
+		MAKRO_GET_FEATURE(StatusDisplayLED);
 	}
 
     private:	
@@ -934,15 +959,33 @@ class RosScitosBase {
 };
 
 
-void diagnosticsPublishingLoop(ros::NodeHandle& n, RosScitosBase& ros_scitos, ros::Publisher* diagnosticsPublisher) {
-	ros::Rate loop_rate(2);
-
+void diagnosticsPublishingLoop(ros::NodeHandle& n, RosScitosBase& ros_scitos,
+		ros::Publisher* diagnosticsPublisher, ros::Rate loop_rate)
+{
 	while (n.ok()) {
 		ros_scitos.loop_diagnostics(diagnosticsPublisher);
 		// This will adjust as needed per iteration
 		loop_rate.sleep();
 	}
 }
+
+void dynamicReconfigureUpdaterLoop(ros::NodeHandle& n, RosScitosBase &ros_scitos,
+		dynamic_reconfigure::Server<metralabs_ros::ScitosG5Config> &dynamicReconfigureServer,
+		boost::recursive_mutex &mutex, ros::Rate loop_rate)
+{
+
+	metralabs_ros::ScitosG5Config config;
+
+	while (n.ok()) {
+		ros_scitos.get_features(config);// update config to current hardware state
+		boost::recursive_mutex::scoped_lock lock(mutex);
+		dynamicReconfigureServer.updateConfig(config);
+		lock.unlock();
+		loop_rate.sleep();
+	}
+
+}
+
 
 int main(int argc, char **argv)
 {
@@ -965,15 +1008,20 @@ int main(int argc, char **argv)
 
 	/// start robot & node components
 
+	ROS_INFO("Starting robot base...");
 	ScitosBase base(scitos_config_file.c_str(), argc, argv);
+
+    base.setFeature(FEATURE_SONAR, false);
 
 	if(!disable_arm) {
 		base.setFeature(FEATURE_ARM, true);
 		ros::Duration(2.3).sleep(); // let arm start up
 	}
 
+	ROS_INFO("Starting ros base connector...");
 	RosScitosBase ros_scitos(n, &base);
 
+	ROS_INFO("Starting ros schunk connector...");
 	SchunkServer schunkServer(n, action_server_name);
 
 	/*
@@ -984,6 +1032,8 @@ int main(int argc, char **argv)
 	 */
 
 	/// intialize topics for robot and arm
+
+	ROS_INFO("Subscribing schunk topics...");
 
 	ros::Subscriber targetJointStateSubscriberPositionControl = n.subscribe("/schunk/target_pc/joint_states", 1, &SchunkServer::cb_targetJointStatePositionControl, &schunkServer);
 	ros::Subscriber targetJointStateSubscriberVelocityControl = n.subscribe("/schunk/target_vc/joint_states", 1, &SchunkServer::cb_targetJointStateVelocityControl, &schunkServer);
@@ -1010,18 +1060,37 @@ int main(int argc, char **argv)
 
 	/// intialize diagnostics
 
-	ros::Publisher m_diagnosticsPublisher = n.advertise<diagnostic_msgs::DiagnosticArray> ("/diagnostics", 50);
+	ROS_INFO("Starting diagnostics...");
 
-  	boost::thread(diagnosticsPublishingLoop, n, ros_scitos, &m_diagnosticsPublisher);
+	ros::Publisher diagnosticsPublisher = n.advertise<diagnostic_msgs::DiagnosticArray> ("/diagnostics", 50);
+  	boost::thread(diagnosticsPublishingLoop, n, ros_scitos, &diagnosticsPublisher, ros::Rate(2));
 
 
-  	/// intialize dyn reconfigure
+  	/// intialize dynamic_reconfigure
 
-	dynamic_reconfigure::Server<metralabs_ros::ScitosG5Config> dynamicReconfigureServer;
+	ROS_INFO("Starting dynamic_reconfigure...");
+
+	boost::recursive_mutex dyn_reconf_mutex;
+	dynamic_reconfigure::Server<metralabs_ros::ScitosG5Config> dynamicReconfigureServer(dyn_reconf_mutex);
+
+	// update config to current hardware state
+	metralabs_ros::ScitosG5Config config;
+	ros_scitos.get_features(config);	// The first time the read config is totally wrong, maybe it's the previous state from rosparam
+	ros_scitos.get_features(config);	// It's no timing issue as far as I tested it. 		TODO fix or proof as stable..
+
+	// mutex needed for dynreconf.updateConfig, see non existent manual; eh I mean source
+	boost::recursive_mutex::scoped_lock lock(dyn_reconf_mutex);
+	dynamicReconfigureServer.updateConfig(config);
+	lock.unlock();
+
+	boost::thread(dynamicReconfigureUpdaterLoop, n, ros_scitos, boost::ref(dynamicReconfigureServer),
+			boost::ref(dyn_reconf_mutex), ros::Rate(2));
+
+	// init callback
 	dynamic_reconfigure::Server<metralabs_ros::ScitosG5Config>::CallbackType f;
-
 	f = boost::bind(&RosScitosBase::dynamic_reconfigure_callback, ros_scitos, _1, _2);
 	dynamicReconfigureServer.setCallback(f);
+
 
 //	ROS_INFO("Spinning node");
 //	ros::spin();
