@@ -751,6 +751,7 @@ class RosScitosBase {
 				// calculate transforms (once)
 				static std::vector<tf::Transform> sonarTransforms;
 				static bool sonarTransformsCalculated = false;
+
 				if(!sonarTransformsCalculated) {
 					sonarTransformsCalculated = true;
 					float angle = sonarConfigCircular->first_sensor_angle;
@@ -758,7 +759,7 @@ class RosScitosBase {
 						float x = sonarConfigCircular->offset_from_center * std::cos(angle) -0.075;
 						float y = sonarConfigCircular->offset_from_center * std::sin(angle);
 						tf::Transform* transform = new tf::Transform(
-								tf::Quaternion(angle, 0, 0),
+								tf::Quaternion(0, 0, angle),
 								tf::Vector3(x, y, 0.25));
 						sonarTransforms.push_back(*transform);
 						angle += sonarConfigCircular->sensor_angle_dist;
@@ -767,7 +768,7 @@ class RosScitosBase {
 					std::vector<tf::Transform>::iterator it = sonarTransforms.begin();
 					for (int i=0; it != sonarTransforms.end(); it++) {
 						char targetframe[20];
-						sprintf(targetframe, "/sonar/sonar_%2d", i++);
+						sprintf(targetframe, "/sonar/sonar_%02d", i++);
 						m_odom_broadcaster.sendTransform(
 								tf::StampedTransform(*it, ros::Time::now(), "/base_link", targetframe)
 							);
@@ -783,7 +784,7 @@ class RosScitosBase {
 
 				sensor_msgs::Range sonar_msg;
 				sonar_msg.header.stamp = currentTime;
-				sonar_msg.radiation_type = sensor_msgs::Range::INFRARED;
+				sonar_msg.radiation_type = sensor_msgs::Range::ULTRASOUND;
 				sonar_msg.field_of_view = sonarConfigCircular->cone_angle;  // DEG_TO_RAD(15);	// from manual
 				sonar_msg.min_range = 0.2;	// from manual
 				sonar_msg.max_range = 3;	// from manual
@@ -792,7 +793,7 @@ class RosScitosBase {
 				{
 					static int nextSonarToSend = 0;
 					char nextTargetframe[20];
-					sprintf(nextTargetframe, "/sonar/sonar_%2d", nextSonarToSend);
+					sprintf(nextTargetframe, "/sonar/sonar_%02d", nextSonarToSend);
 
 					// range data
 					switch(measurements.at(nextSonarToSend).err.std) {
