@@ -7,7 +7,10 @@
 	    <remap from="joint_states" to="/schunk/position/joint_states" />
 	    <!--<param name="source_list" value="[/schunk/position/pre_mimic/joint_states]" />-->
 	    <rosparam param="source_list">['/schunk/position/pre_mimic/joint_states']</rosparam>
-	    <!--<rosparam param="dependent_joints">{GR_Fneg: {parent: GR_Fpos, factor: -3 }}</rosparam>-->
+	    
+	    <!-- this one is only because the official joint_state_publisher doesn't handle URDF mimic joints -->
+	    <rosparam param="dependent_joints">{GR_Fneg: {parent: GR_Fpos, factor: 0.5 }}</rosparam>
+	    
 	    <param name="rate" type="int" value="10" />
 <!-- 	    <param name="tf_prefix" type="string" value="/schunk/position" /> -->
 	</node>
