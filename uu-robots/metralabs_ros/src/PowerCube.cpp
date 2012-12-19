@@ -92,8 +92,8 @@ int PowerCube::pc_ack() {
 			if(!moduleConfig->status_flags.flags.home_ok && id + ID_OFFSET == 25) {
 				pc_ref(id); // start reference
 				ros::Duration(4).sleep(); // wait to finish reference
-				pc_set_target_acceleration(id, 0.04); // set gripper acceleration
-				pc_set_target_velocity(id, 0.04);	// and velocity to a nice value
+				pc_set_target_acceleration(id, 0.04);	// set gripper acceleration
+				pc_set_target_velocity(id, 0.04);		// and velocity to a nice value
 			}
 		}
 

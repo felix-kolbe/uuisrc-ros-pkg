@@ -796,15 +796,16 @@ class RosScitosBase {
 					sprintf(nextTargetframe, "/sonar/sonar_%02d", nextSonarToSend);
 
 					// range data
+//					ROS_DEBUG("Sonar #%d: value: %1.3f status: %d", nextSonarToSend, measurements.at(nextSonarToSend).range, measurements.at(nextSonarToSend).err.std);
 					switch(measurements.at(nextSonarToSend).err.std) {
 						case RangeData::RANGE_OKAY:
-						case RangeData::RANGE_NO_OBJECT_WITHIN_RANGE:
 						case RangeData::RANGE_OBJECT_SOMEWHERE_IN_RANGE:
 						case RangeData::RANGE_PROBABLY_OKAY:
-						case RangeData::RANGE_PROBABLY_NO_OBJECT_WITHIN_RANGE:
 						case RangeData::RANGE_PROBABLY_OBJECT_SOMEWHERE_IN_RANGE:
 							sonar_msg.range = measurements.at(nextSonarToSend).range;
 							break;
+						case RangeData::RANGE_NO_OBJECT_WITHIN_RANGE:
+						case RangeData::RANGE_PROBABLY_NO_OBJECT_WITHIN_RANGE:
 						case RangeData::RANGE_INVALID_MEASUREMENT:
 						case RangeData::RANGE_ERR_SENSOR_BROKEN:
 						case RangeData::RANGE_MASKED:
