@@ -997,6 +997,7 @@ int main(int argc, char **argv)
 
 	std::string action_server_name = "schunk/follow_joint_trajectory";
 
+
 	/// read parameters
 
 	bool disable_arm;
@@ -1008,7 +1009,8 @@ int main(int argc, char **argv)
 
 	ros::Duration(0.9).sleep(); // wait to let the running me close its scitos connection
 
-	/// start robot & node components
+
+	/// initialize robot base & node components
 
 	ROS_INFO("Starting robot base...");
 	ScitosBase base(scitos_config_file.c_str(), argc, argv);
@@ -1016,12 +1018,56 @@ int main(int argc, char **argv)
     base.setFeature(FEATURE_SONAR, false);
 
 	if(!disable_arm) {
+		ros::Duration(0.5).sleep(); // let ScitosBase connect to robot
 		base.setFeature(FEATURE_ARM, true);
-		ros::Duration(2.3).sleep(); // let arm start up
+		ros::Duration(0.5).sleep(); // let arm start up
 	}
 
 	ROS_INFO("Starting ros base connector...");
 	RosScitosBase ros_scitos(n, &base);
+
+
+	/// intialize diagnostics
+
+	ROS_INFO("Starting diagnostics...");
+
+	ros::Publisher diagnosticsPublisher = n.advertise<diagnostic_msgs::DiagnosticArray> ("/diagnostics", 50);
+  	boost::thread(diagnosticsPublishingLoop, n, ros_scitos, &diagnosticsPublisher, ros::Rate(2));
+
+
+  	/// intialize dynamic_reconfigure
+
+	ROS_INFO("Starting dynamic_reconfigure...");
+
+	boost::recursive_mutex dyn_reconf_mutex;
+	dynamic_reconfigure::Server<metralabs_ros::ScitosG5Config> dynamicReconfigureServer(dyn_reconf_mutex);
+
+	// update config to current hardware state
+	metralabs_ros::ScitosG5Config config;
+	ros_scitos.get_features(config);	// The first time the read config is totally wrong, maybe it's the previous state from rosparam
+//	ROS_INFO_STREAM("This is what the first read gives... " << config.EBC1_Enable24V);
+//	ros_scitos.get_features(config);	// It's no timing issue as far as I tested it. 		TODO fix or proof as stable..
+	if(!disable_arm) {
+		config.EBC1_Enable24V = true;
+	}
+	// mutex needed for dynreconf.updateConfig, see non existent manual; eh I mean source
+	boost::recursive_mutex::scoped_lock lock(dyn_reconf_mutex);
+
+//	ROS_INFO_STREAM("Updating with current config from hardware... " << config.EBC1_Enable24V);
+	dynamicReconfigureServer.updateConfig(config);
+	lock.unlock();
+
+	// init reconfigure publisher
+	boost::thread(dynamicReconfigureUpdaterLoop, n, ros_scitos, boost::ref(dynamicReconfigureServer),
+			boost::ref(dyn_reconf_mutex), ros::Rate(2));
+
+	// init reconfigure callback
+	dynamic_reconfigure::Server<metralabs_ros::ScitosG5Config>::CallbackType f;
+	f = boost::bind(&RosScitosBase::dynamic_reconfigure_callback, ros_scitos, _1, _2);
+	dynamicReconfigureServer.setCallback(f);
+
+
+	/// intialize robot arm
 
 	ROS_INFO("Starting ros schunk connector...");
 	SchunkServer schunkServer(n, action_server_name);
@@ -1032,8 +1078,6 @@ int main(int argc, char **argv)
 	 * /schunk/target_vc/joint_state  <- for receiving velocity control commands
 	 * /schunk/status -> to publish all the statuses
 	 */
-
-	/// intialize topics for robot and arm
 
 	ROS_INFO("Subscribing schunk topics...");
 
@@ -1059,43 +1103,6 @@ int main(int argc, char **argv)
 
 	ros::Subscriber command = n.subscribe("command", 1, &SchunkServer::cb_commandTrajectory, &schunkServer);
 
-
-	/// intialize diagnostics
-
-	ROS_INFO("Starting diagnostics...");
-
-	ros::Publisher diagnosticsPublisher = n.advertise<diagnostic_msgs::DiagnosticArray> ("/diagnostics", 50);
-  	boost::thread(diagnosticsPublishingLoop, n, ros_scitos, &diagnosticsPublisher, ros::Rate(2));
-
-
-  	/// intialize dynamic_reconfigure
-
-	ROS_INFO("Starting dynamic_reconfigure...");
-
-	boost::recursive_mutex dyn_reconf_mutex;
-	dynamic_reconfigure::Server<metralabs_ros::ScitosG5Config> dynamicReconfigureServer(dyn_reconf_mutex);
-
-	// update config to current hardware state
-	metralabs_ros::ScitosG5Config config;
-	ros_scitos.get_features(config);	// The first time the read config is totally wrong, maybe it's the previous state from rosparam
-	ros_scitos.get_features(config);	// It's no timing issue as far as I tested it. 		TODO fix or proof as stable..
-
-	// mutex needed for dynreconf.updateConfig, see non existent manual; eh I mean source
-	boost::recursive_mutex::scoped_lock lock(dyn_reconf_mutex);
-	dynamicReconfigureServer.updateConfig(config);
-	lock.unlock();
-
-	boost::thread(dynamicReconfigureUpdaterLoop, n, ros_scitos, boost::ref(dynamicReconfigureServer),
-			boost::ref(dyn_reconf_mutex), ros::Rate(2));
-
-	// init callback
-	dynamic_reconfigure::Server<metralabs_ros::ScitosG5Config>::CallbackType f;
-	f = boost::bind(&RosScitosBase::dynamic_reconfigure_callback, ros_scitos, _1, _2);
-	dynamicReconfigureServer.setCallback(f);
-
-
-//	ROS_INFO("Spinning node");
-//	ros::spin();
 
 
 	/// start main loop
