@@ -2,6 +2,7 @@
 #define __SCITOSBASE__
 
 #include <MetraLabsBase.h>
+#include <MDebug.h> // for MTime
 #include <config/MLRobotic_config.h>
 #include <base/Application.h>
 #include <robot/Robot.h>
@@ -33,6 +34,10 @@ class ScitosBase {
 	void set_velocity(double v, double w);
 	void loop();
 	
+	void reset_bumper() {
+		tBumperResetCmd->set(0, true, true, MetraLabs::base::MTime::now());
+	}
+
 	template<typename FeatureType>
 	void setFeature(std::string name, FeatureType value);
 
@@ -145,10 +150,13 @@ class ScitosBase {
 	ClassFactory* tClassFactory;
 	Blackboard* tBlackboard;
 	Robot* tRobot;
+
 	BlackboardDataOdometry* tOdometryData;
 	BlackboardDataVelocity* tVelocityData;
 	BlackboardDataRange* tSonarData;
 	BlackboardDataBatteryState* tBatteryStateData;
+	BlackboardDataUInt8* tBumperResetCmd;
+
 	OdometryCallbackHandler tOdometryHandler;
 	SonarCallbackHandler tSonarHandler;
 	BatteryStateCallbackHandler tBatteryStateHandler;

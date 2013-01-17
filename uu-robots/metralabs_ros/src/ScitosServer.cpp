@@ -10,6 +10,7 @@
 #include <urdf/model.h>
 #include <tf/transform_broadcaster.h>
 
+#include <std_msgs/Empty.h>
 #include <std_msgs/String.h>
 #include <std_msgs/Int8.h>
 #include <std_msgs/Bool.h>
@@ -657,6 +658,7 @@ class RosScitosBase {
 	    m_odomPublisher = m_node.advertise<nav_msgs::Odometry> ("odom", 50);
 	    m_sonarPublisher = m_node.advertise<sensor_msgs::Range> ("sonar", 50);
 	    m_commandSubscriber = m_node.subscribe("cmd_vel", 100, &RosScitosBase::driveCommandCallback, this);
+	    m_bumperResetSubscriber = m_node.subscribe("bumper_reset", 1, &RosScitosBase::bumperResetCallback, this);
 	}
 	
 	void loop() {
@@ -948,6 +950,7 @@ class RosScitosBase {
 	ros::Publisher m_odomPublisher;
 	ros::Publisher m_sonarPublisher;
 	ros::Subscriber m_commandSubscriber;
+	ros::Subscriber m_bumperResetSubscriber;
 
 	ros::Time remote_control_next_timeout;
 	ros::Duration dead_remote_control_timeout;
@@ -957,6 +960,11 @@ class RosScitosBase {
 		ROS_DEBUG("Received some speeds [%f %f]", msg->linear.x, msg->angular.z);
 		remote_control_next_timeout = ros::Time::now() + dead_remote_control_timeout;
 		m_base->set_velocity(msg->linear.x, msg->angular.z);
+	}
+
+	void bumperResetCallback(const std_msgs::EmptyConstPtr& dummy) {
+		ROS_INFO("Resetting bumper");
+		m_base->reset_bumper();
 	}
 };
 

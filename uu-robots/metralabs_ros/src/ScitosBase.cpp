@@ -132,7 +132,7 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 
 
 	///////////////////////////////////////////////////////////////////////////
-	// Odometry callback registration
+	// Battery callback registration
 
 	tBatteryStateData = NULL;
 	tErr = getDataFromBlackboard<BlackboardDataBatteryState>(tBlackboard,
@@ -143,6 +143,20 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 	}
 
 	tBatteryStateData->addCallback(&tBatteryStateHandler);
+
+
+	///////////////////////////////////////////////////////////////////////////
+	// BumperResetCmd data registration
+
+	tBumperResetCmd = NULL;
+
+	tErr = getDataFromBlackboard<BlackboardDataUInt8>(tBlackboard,
+			"MyRobot.BumperResetCmd", tBumperResetCmd);
+	if (tErr != OK) {
+		fprintf(stderr, "FATAL: Failed to get the bumper reset command from the blackboard!\n");
+		exit(-1);
+	}
+
 
 
 	///////////////////////////////////////////////////////////////////////////
