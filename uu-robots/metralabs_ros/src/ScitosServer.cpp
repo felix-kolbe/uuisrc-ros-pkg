@@ -652,23 +652,22 @@ class RosScitosBase {
 	RosScitosBase(ros::NodeHandle& n, ScitosBase* base) :
 		m_node(n),
 		remote_control_next_timeout(),
-		dead_remote_control_timeout(0.9)
+		DEAD_REMOTE_CONTROL_TIMEOUT(0.9),
+		activate_remote_control_timeout(true)
 	{
 	    m_base = base;
 	    m_odomPublisher = m_node.advertise<nav_msgs::Odometry> ("odom", 50);
 	    m_sonarPublisher = m_node.advertise<sensor_msgs::Range> ("sonar", 50);
-	    m_commandSubscriber = m_node.subscribe("cmd_vel", 100, &RosScitosBase::driveCommandCallback, this);
+	    m_commandSubscriber = m_node.subscribe("cmd_vel", 1, &RosScitosBase::driveCommandCallback, this);
 	    m_bumperResetSubscriber = m_node.subscribe("bumper_reset", 1, &RosScitosBase::bumperResetCallback, this);
 	}
 	
 	void loop() {
 		// dead remote control check
-		if(ros::Time::now() > remote_control_next_timeout) {
-			ROS_INFO("remote control timeout, stopping robot");
+		if(activate_remote_control_timeout && ros::Time::now() > remote_control_next_timeout) {
+			ROS_INFO("remote control timeout after nonzero command, stopping robot");
 			m_base->set_velocity(0, 0);
-			// test again after 1 min (unless vel_cmd is received)
-			// to prevent setting velocity and info msg too often in this fast loop
-			remote_control_next_timeout = ros::Time::now() + ros::Duration(60);
+			activate_remote_control_timeout = false;
 		}
 
 
@@ -953,13 +952,15 @@ class RosScitosBase {
 	ros::Subscriber m_bumperResetSubscriber;
 
 	ros::Time remote_control_next_timeout;
-	ros::Duration dead_remote_control_timeout;
+	ros::Duration DEAD_REMOTE_CONTROL_TIMEOUT;
+	bool activate_remote_control_timeout;
     
     private:
 	void driveCommandCallback(const geometry_msgs::TwistConstPtr& msg) {
-		ROS_DEBUG("Received some speeds [%f %f]", msg->linear.x, msg->angular.z);
-		remote_control_next_timeout = ros::Time::now() + dead_remote_control_timeout;
 		m_base->set_velocity(msg->linear.x, msg->angular.z);
+		ROS_DEBUG("Received some speeds [%f %f]", msg->linear.x, msg->angular.z);
+		activate_remote_control_timeout = msg->linear.x != 0 || msg->angular.z != 0;
+		remote_control_next_timeout = ros::Time::now() + DEAD_REMOTE_CONTROL_TIMEOUT;
 	}
 
 	void bumperResetCallback(const std_msgs::EmptyConstPtr& dummy) {
