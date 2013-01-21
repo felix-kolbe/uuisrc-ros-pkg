@@ -165,14 +165,46 @@ public:
 
 private:
 
+	/* At this time only velocity values are followed. */
 	void follow_trajectory() {
 		//I am not entirely sure that this code actually looks like real-time
-		ros::Time now = ros::Time::now();
+		ros::Time trajStartTime = ros::Time::now();
 		for (unsigned int step=0; step<traj.points.size(); step++) {
 			trajectory_msgs::JointTrajectoryPoint& point = traj.points[step];
 
+			ROS_INFO_STREAM("Trajectory thread executing step "<<step);
+			//now apply speed to each joint
+			for (unsigned int joint_i = 0; joint_i<traj.joint_names.size(); joint_i++) {
+
+				unsigned int id = nameToNumber[traj.joint_names[joint_i]];
+				float velRad = point.velocities[joint_i];
+				float velDeg = RAD_TO_DEG(velRad);
+
+				ROS_INFO_STREAM("Moving module "<<id<<" with "<<velRad<<" rad/s = "<<velDeg<<" deg/s");
+#if SCHUNK_NOT_AMTEC != 0
+				arm->pc_move_velocity(id, velDeg);
+#else
+				arm->pc_move_velocity(id, velRad); // amtec protocol already in rad
+#endif
+
+				//fill in the message
+				state_msg.desired = state_msg.actual;
+#if SCHUNK_NOT_AMTEC != 0
+				state_msg.actual.positions[joint_i] = DEG_TO_RAD(arm->mManipulator.getModules().at(joint_i).status_pos);
+#else
+				state_msg.actual.positions[joint_i] = arm->mManipulator.getModules().at(joint_i).status_pos;
+#endif
+				state_msg.actual.velocities[joint_i] = point.velocities[joint_i];
+				state_msg.actual.time_from_start = point.time_from_start;
+			}
+
+			//finally publish the state message
+			state_msg.header.stamp = ros::Time::now();
+			state_publisher.publish(state_msg);
+
+
 			//wait for the right time and check if it has to die
-			while ((ros::Time::now() - now) < point.time_from_start) {
+			while (ros::Time::now() < trajStartTime + point.time_from_start) {
 				; // <- Now things are really dirty
 				{ //This is tricky... a block as the only body of a loop!
 					boost::unique_lock<boost::mutex> lock(mut);
@@ -182,22 +214,6 @@ private:
 					}
 				}
 			}
-			//now apply speed to each joint
-			for (unsigned int joint_i = 0; joint_i<traj.joint_names.size(); joint_i++) {
-
-				unsigned int id = nameToNumber[traj.joint_names[joint_i]];
-				arm->pc_move_velocity(id, RAD_TO_DEG(point.velocities[joint_i]));
-
-				//fill in the message
-				state_msg.desired = state_msg.actual;
-				state_msg.actual.positions[joint_i] = DEG_TO_RAD(arm->mManipulator.getModules().at(joint_i).status_pos);
-				state_msg.actual.velocities[joint_i] = point.velocities[joint_i];
-				state_msg.actual.time_from_start = point.time_from_start;
-			}
-
-			//finally publish the state message
-			state_msg.header.stamp = ros::Time::now();
-			state_publisher.publish(state_msg);
 		}
 	}
 
@@ -412,6 +428,9 @@ public:
 				m_joints.push_back((*mapElement).second.get() ); // shared pointer mantaged?
 		}
 		ROS_INFO("URDF specifies %d non-fixed joints.", m_joints.size() );
+
+
+		ros::Duration(1).sleep(); // let arm start up
 
 		// Initialise the powercube
 		m_powerCube.init();
@@ -1029,7 +1048,6 @@ int main(int argc, char **argv)
 	if(!disable_arm) {
 		ros::Duration(0.5).sleep(); // let ScitosBase connect to robot
 		base.setFeature(FEATURE_ARM, true);
-		ros::Duration(0.5).sleep(); // let arm start up
 	}
 
 	ROS_INFO("Starting ros base connector...");
