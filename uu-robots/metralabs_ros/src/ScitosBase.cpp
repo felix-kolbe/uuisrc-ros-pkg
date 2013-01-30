@@ -15,6 +15,11 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 	m_v = 0;
 	m_w = 0;
 
+	m_pVoltage = 0;
+	m_pCurrent = 0;
+	m_pChargeState = 0;
+	m_pRemainingTime = 0;
+	m_pChargerStatus = 0;
 
 	using namespace MetraLabs::base;
 	using namespace MetraLabs::robotic::base;
@@ -42,9 +47,8 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 
 	// Load some parameters for the robot SCITOS-G5.
 	ParameterNode tRobotCfg("RobotCfg");
-	if (tRobotCfg.readFromFile(config_file) != OK)
-	{
-		fprintf(stderr, "FATAL: Can't read parameter file.\n");
+	if ((tErr = tRobotCfg.readFromFile(config_file)) != OK) {
+		fprintf(stderr, "FATAL: Can't read parameter file. Code: %s\n", getErrorString(tErr).c_str());
 		exit(-1);
 	}
 
@@ -69,8 +73,8 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 	}
 
 	// Pre-Initialize the robot
-	if (tRobot->preInitializeClient(&tRobotCfg) != OK) {
-		fprintf(stderr, "FATAL: Failed to pre-initialize the robot.\n");
+	if ((tErr = tRobot->preInitializeClient(&tRobotCfg)) != OK) {
+		fprintf(stderr, "FATAL: Failed to pre-initialize the robot. Code: %s\n", getErrorString(tErr).c_str());
 		exit(-1);
 	}
 
@@ -82,14 +86,14 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 	tRobot->setPhysicalName("RangeFinder.Sonar.Data", "MyRobot.Sonar");
 	tRobot->setPhysicalName("Bumper.Bumper.Data",     "MyRobot.Bumper");
 	tRobot->setPhysicalName("Bumper.Bumper.ResetCmd", "MyRobot.BumperResetCmd");
-	if (tRobot->assignToBlackboard(tBlackboard, true) != OK) {
-		fprintf(stderr, "FATAL: Failed to assign the robot to the blackboard.\n");
+	if ((tErr = tRobot->assignToBlackboard(tBlackboard, true)) != OK) {
+		fprintf(stderr, "FATAL: Failed to assign the robot to the blackboard. Code: %s\n", getErrorString(tErr).c_str());
 		exit(-1);
 	}
 
 	// Initialize the robot
-	if (tRobot->initializeClient(&tRobotCfg) != OK) {
-		fprintf(stderr, "FATAL: Failed to initialize the robot.\n");
+	if ((tErr = tRobot->initializeClient(&tRobotCfg)) != OK) {
+		fprintf(stderr, "FATAL: Failed to initialize the robot. Code: %s\n", getErrorString(tErr).c_str());
 		exit(-1);
 	}
 
@@ -97,8 +101,8 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 	// Blackboard activation
 
 	// Start the blackboard.
-	if (tBlackboard->startBlackboard() != OK) {
-		fprintf(stderr, "FATAL: Failed to start the blackboard.\n");
+	if ((tErr = tBlackboard->startBlackboard()) != OK) {
+		fprintf(stderr, "FATAL: Failed to start the blackboard. Code: %s\n", getErrorString(tErr).c_str());
 		exit(-1);
 	}
 
@@ -109,7 +113,7 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 	tErr = getDataFromBlackboard<BlackboardDataOdometry>(tBlackboard,
 			"MyRobot.Odometry", tOdometryData);
 	if (tErr != OK) {
-		fprintf(stderr, "FATAL: Failed to get the odometry data from the blackboard!\n");
+		fprintf(stderr, "FATAL: Failed to get the odometry data from the blackboard! Code: %s\n", getErrorString(tErr).c_str());
 		exit(-1);
 	}
 
@@ -122,7 +126,7 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 	tErr = getDataFromBlackboard<BlackboardDataRange>(tBlackboard,
 			"MyRobot.Sonar", tSonarData);
 	if (tErr != OK) {
-		fprintf(stderr, "FATAL: Failed to get the Sonar data from the blackboard! Is it specified in the XML config?\n");
+		fprintf(stderr, "FATAL: Failed to get the Sonar data from the blackboard! Is it specified in the XML config? Code: %s\n", getErrorString(tErr).c_str());
 //		exit(-1);  no, let the robot start wihtout sonar, even if it wasn't specified in the XML config.
 	}
 	else
@@ -138,7 +142,7 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 	tErr = getDataFromBlackboard<BlackboardDataBatteryState>(tBlackboard,
 			"MyRobot.BatteryState", tBatteryStateData);
 	if (tErr != OK) {
-		fprintf(stderr, "FATAL: Failed to get the battery state data from the blackboard!\n");
+		fprintf(stderr, "FATAL: Failed to get the battery state data from the blackboard! Code: %s\n", getErrorString(tErr).c_str());
 		exit(-1);
 	}
 
@@ -153,7 +157,7 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 	tErr = getDataFromBlackboard<BlackboardDataUInt8>(tBlackboard,
 			"MyRobot.BumperResetCmd", tBumperResetCmd);
 	if (tErr != OK) {
-		fprintf(stderr, "FATAL: Failed to get the bumper reset command from the blackboard!\n");
+		fprintf(stderr, "FATAL: Failed to get the bumper reset command from the blackboard! Code: %s\n", getErrorString(tErr).c_str());
 		exit(-1);
 	}
 
@@ -162,8 +166,8 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 	///////////////////////////////////////////////////////////////////////////
 
 	// Start the robot.
-	if (tRobot->startClient() != OK) {
-		fprintf(stderr, "FATAL: Failed to start the robot system.\n");
+	if ((tErr = tRobot->startClient()) != OK) {
+		fprintf(stderr, "FATAL: Failed to start the robot system. Code: %s\n", getErrorString(tErr).c_str());
 		exit(-1);
 	}
 
@@ -171,7 +175,7 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 	tErr = getDataFromBlackboard<BlackboardDataVelocity>(tBlackboard, 
 			"MyRobot.VelocityCmd", tVelocityData);
 	if (tErr != OK) {
-		fprintf(stderr, "FATAL: Failed to get the velocity data from the blackboard!\n");
+		fprintf(stderr, "FATAL: Failed to get the velocity data from the blackboard! Code: %s\n", getErrorString(tErr).c_str());
 		exit(-1);
 	}
 
@@ -239,16 +243,17 @@ void ScitosBase::get_batteryState(float& pVoltage, float& pCurrent, int16_t& pCh
 
 
 ScitosBase::~ScitosBase() {
-    if (tBlackboard->stopBlackboard() != OK)
-		fprintf(stderr, "ERROR: Failed to stop the blackboard.\n");
+	Error tErr;
+	if ((tErr = tBlackboard->stopBlackboard()) != OK)
+		fprintf(stderr, "ERROR: Failed to stop the blackboard. Code: %s\n", getErrorString(tErr).c_str());
 
-    // Stop the robot.
-    if (tRobot->stopClient() != OK)
-		fprintf(stderr, "ERROR: Failed to stop the robot system.\n");
+	// Stop the robot.
+	if ((tErr = tRobot->stopClient()) != OK)
+		fprintf(stderr, "ERROR: Failed to stop the robot system. Code: %s\n", getErrorString(tErr).c_str());
 
-    // Destroy the robot
-    if (tRobot->destroyClient() != OK)
-		fprintf(stderr, "ERROR: Failed to destroy the robot system.\n");
+	// Destroy the robot
+	if ((tErr = tRobot->destroyClient()) != OK)
+		fprintf(stderr, "ERROR: Failed to destroy the robot system. Code: %s\n", getErrorString(tErr).c_str());
 }
 
 
