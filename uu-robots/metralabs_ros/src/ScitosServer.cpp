@@ -877,16 +877,34 @@ class RosScitosBase {
 		diagnostic_msgs::DiagnosticStatus batteryStatus;
 		batteryStatus.level = diagnostic_msgs::DiagnosticStatus::OK;
 		batteryStatus.name = "Battery";
-		batteryStatus.message = "..tbd..";
+		batteryStatus.message = "undefined";
 		batteryStatus.hardware_id = "0a4fcec0-27ef-497a-93ba-db39808ec1af";
 
 #define 	VOLTAGE_ERROR_LEVEL	23		// TODO do me parameters
 #define 	VOLTAGE_WARN_LEVEL	24
+#define 	VOLTAGE_MID_LEVEL	26
+#define 	VOLTAGE_FULL_LEVEL	28.8
+#define 	CHARGER_PLUGGED 	1
 
-		if(pVoltage < VOLTAGE_ERROR_LEVEL && pChargerStatus == 0)
+		if(pVoltage < VOLTAGE_ERROR_LEVEL && pChargerStatus != CHARGER_PLUGGED)
 			batteryStatus.level = diagnostic_msgs::DiagnosticStatus::ERROR;
-		else if(pVoltage < VOLTAGE_WARN_LEVEL && pChargerStatus == 0)
+		else if(pVoltage < VOLTAGE_WARN_LEVEL && pChargerStatus != CHARGER_PLUGGED)
 			batteryStatus.level = diagnostic_msgs::DiagnosticStatus::WARN;
+
+		// build text message
+		batteryStatus.message = "High";
+		if(pVoltage < VOLTAGE_MID_LEVEL)
+			batteryStatus.message = "Mid";
+		if(pVoltage < VOLTAGE_WARN_LEVEL)
+			batteryStatus.message = "Low";
+		if(pVoltage < VOLTAGE_ERROR_LEVEL)
+			batteryStatus.message = "Depleted";
+
+		batteryStatus.message += pChargerStatus == CHARGER_PLUGGED ? ", charging" : ", discharging";
+
+		if(pVoltage >= VOLTAGE_FULL_LEVEL)
+			batteryStatus.message = "Fully charged";
+
 
 		batteryStatus.values.resize(5);
 		std::stringstream ss;
@@ -910,7 +928,7 @@ class RosScitosBase {
 		batteryStatus.values[3].value = ss.str();
 
 		batteryStatus.values[4].key = "ChargerStatus";
-		batteryStatus.values[4].value = pChargerStatus == 0 ? "unplugged" : "plugged";
+		batteryStatus.values[4].value = pChargerStatus == CHARGER_PLUGGED ? "plugged" : "unplugged";
 
 		/// combine and publish statii as array
 		diagnostic_msgs::DiagnosticArray diagArray;
