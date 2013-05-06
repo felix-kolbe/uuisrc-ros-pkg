@@ -92,9 +92,11 @@ int PowerCube::pc_ack() {
 
 		// TODO cleanly integrate this fix for our gripper.
 		if(moduleConfig->linear) { // suspect a gripper that is safe to reference
-			if(!moduleConfig->status_flags.flags.home_ok && id + ID_OFFSET == 25) {
+			if(!moduleConfig->status_flags.flags.home_ok) { // if not referenced, do so
 				pc_ref(id); // start reference
 				ros::Duration(4).sleep(); // wait to finish reference
+			}
+			if(id + ID_OFFSET == 25) { // set movable speeds in case too low ones were set
 				pc_set_target_acceleration(id, 0.04);	// set gripper acceleration
 				pc_set_target_velocity(id, 0.04);		// and velocity to a nice value
 			}

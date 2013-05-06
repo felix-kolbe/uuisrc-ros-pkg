@@ -430,7 +430,7 @@ public:
 		ROS_INFO("URDF specifies %d non-fixed joints.", m_joints.size() );
 
 
-		ros::Duration(1).sleep(); // let arm start up
+		ros::Duration(3).sleep(); // let arm start up
 
 		// Initialise the powercube
 		m_powerCube.init();
@@ -880,10 +880,11 @@ class RosScitosBase {
 		batteryStatus.message = "undefined";
 		batteryStatus.hardware_id = "0a4fcec0-27ef-497a-93ba-db39808ec1af";
 
-#define 	VOLTAGE_ERROR_LEVEL	23		// TODO do me parameters
-#define 	VOLTAGE_WARN_LEVEL	24
-#define 	VOLTAGE_MID_LEVEL	26
-#define 	VOLTAGE_FULL_LEVEL	28.8
+// TODO do me parameters
+#define 	VOLTAGE_ERROR_LEVEL	23		// and below
+#define 	VOLTAGE_WARN_LEVEL	24		// and below
+#define 	VOLTAGE_MID_LEVEL	26		// and below // above means HIGH_LEVEL
+#define 	VOLTAGE_FULL_LEVEL	28.8	// and above
 #define 	CHARGER_PLUGGED 	1
 
 		if(pVoltage < VOLTAGE_ERROR_LEVEL && pChargerStatus != CHARGER_PLUGGED)
