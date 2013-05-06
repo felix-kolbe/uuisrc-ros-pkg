@@ -408,6 +408,28 @@ private:
 
 	TrajectoryExecuter m_executer;
 
+
+	ros::Subscriber targetJointStateSubscriberPositionControl;
+	ros::Subscriber targetJointStateSubscriberVelocityControl;
+
+	ros::Subscriber emergency;
+	ros::Subscriber stop;
+	ros::Subscriber firstRef;
+	ros::Subscriber ack;
+	ros::Subscriber ackAll;
+	ros::Subscriber ref;
+	ros::Subscriber refAll;
+	ros::Subscriber current;
+	ros::Subscriber currentsMaxAll;
+	ros::Subscriber movePosition;
+	ros::Subscriber moveVelocity;
+	ros::Subscriber targetVelocity;
+	ros::Subscriber targetAcceleration;
+//	ros::Subscriber startPosition;
+
+	ros::Subscriber command;
+
+
 public:
 
 	SchunkServer(ros::NodeHandle &node, std::string action_server_name) :
@@ -418,7 +440,7 @@ public:
 	}
 
 	void init() {
-		// Initialise the arm model parser and find out what non-fixed joins are present
+		// Initialise the arm model parser and find out what non-fixed joints are present
 		m_armModel.initParam("robot_description");
 		std::map<std::string, boost::shared_ptr<urdf::Joint> >::iterator mapElement;
 		for (mapElement = m_armModel.joints_.begin(); mapElement!=m_armModel.joints_.end(); mapElement++) {
@@ -464,6 +486,39 @@ public:
 
 		ROS_INFO("Starting the thread");
 		boost::thread(start_thread, &m_executer);
+
+
+		/*
+		 * /schunk/position/joint_state -> publishes joint state for kinematics modules
+		 * /schunk/target_pc/joint_state <- for received position control commands
+		 * /schunk/target_vc/joint_state  <- for receiving velocity control commands
+		 * /schunk/status -> to publish all the statuses
+		 */
+
+		ROS_INFO("Subscribing schunk topics...");
+
+		targetJointStateSubscriberPositionControl = m_node.subscribe("/schunk/target_pc/joint_states", 1, &SchunkServer::cb_targetJointStatePositionControl, this);
+		targetJointStateSubscriberVelocityControl = m_node.subscribe("/schunk/target_vc/joint_states", 1, &SchunkServer::cb_targetJointStateVelocityControl, this);
+
+		// those topics which must be received multiple times (for each joint) got a 10 for their message buffer
+		emergency = m_node.subscribe("/emergency", 1, &SchunkServer::cb_emergency, this);
+		stop = m_node.subscribe("/stop", 1, &SchunkServer::cb_stop, this);
+		firstRef = m_node.subscribe("/firstRef", 1, &SchunkServer::cb_firstRef, this);
+		ack = m_node.subscribe("/ack", 10, &SchunkServer::cb_ack, this);
+		ackAll = m_node.subscribe("/ackAll", 1, &SchunkServer::cb_ackAll, this);
+		ref = m_node.subscribe("/ref", 10, &SchunkServer::cb_ref, this);
+		refAll = m_node.subscribe("/refAll", 1, &SchunkServer::cb_refAll, this);
+		current = m_node.subscribe("/current", 10, &SchunkServer::cb_current, this);
+		currentsMaxAll = m_node.subscribe("/currentsMaxAll", 1, &SchunkServer::cb_currentsMaxAll, this);
+		movePosition = m_node.subscribe("/movePosition", 10, &SchunkServer::cb_movePosition, this);
+	//	m_node.subscribe("/movePositions", 1, &C_Callbacks::cb_movePositions, &listener);
+		moveVelocity = m_node.subscribe("/moveVelocity", 10, &SchunkServer::cb_moveVelocity, this);
+		targetVelocity = m_node.subscribe("/targetVelocity", 10, &SchunkServer::cb_targetVelocity, this);
+		targetAcceleration = m_node.subscribe("/targetAcceleration", 10, &SchunkServer::cb_targetAcceleration, this);
+	//	startPosition = m_node.subscribe("/startPosition", 1, &PubsAndSubs::cb_startPosition, &services);
+
+		command = m_node.subscribe("command", 1, &SchunkServer::cb_commandTrajectory, this);
+
 
 		ROS_INFO("Ready");
 
@@ -1117,38 +1172,6 @@ int main(int argc, char **argv)
 
 	ROS_INFO("Starting ros schunk connector...");
 	SchunkServer schunkServer(n, action_server_name);
-
-	/*
-	 * /schunk/position/joint_state -> publishes joint state for kinematics modules
-	 * /schunk/target_pc/joint_state <- for received position control commands
-	 * /schunk/target_vc/joint_state  <- for receiving velocity control commands
-	 * /schunk/status -> to publish all the statuses
-	 */
-
-	ROS_INFO("Subscribing schunk topics...");
-
-	ros::Subscriber targetJointStateSubscriberPositionControl = n.subscribe("/schunk/target_pc/joint_states", 1, &SchunkServer::cb_targetJointStatePositionControl, &schunkServer);
-	ros::Subscriber targetJointStateSubscriberVelocityControl = n.subscribe("/schunk/target_vc/joint_states", 1, &SchunkServer::cb_targetJointStateVelocityControl, &schunkServer);
-
-	// those topics which must be received multiple times (for each joint) got a 10 for their message buffer
-	ros::Subscriber emergency = n.subscribe("/emergency", 1, &SchunkServer::cb_emergency, &schunkServer);
-	ros::Subscriber stop = n.subscribe("/stop", 1, &SchunkServer::cb_stop, &schunkServer);
-	ros::Subscriber firstRef = n.subscribe("/firstRef", 1, &SchunkServer::cb_firstRef, &schunkServer);
-	ros::Subscriber ack = n.subscribe("/ack", 10, &SchunkServer::cb_ack, &schunkServer);
-	ros::Subscriber ackAll = n.subscribe("/ackAll", 1, &SchunkServer::cb_ackAll, &schunkServer);
-	ros::Subscriber ref = n.subscribe("/ref", 10, &SchunkServer::cb_ref, &schunkServer);
-	ros::Subscriber refAll = n.subscribe("/refAll", 1, &SchunkServer::cb_refAll, &schunkServer);
-	ros::Subscriber current = n.subscribe("/current", 10, &SchunkServer::cb_current, &schunkServer);
-	ros::Subscriber currentsMaxAll = n.subscribe("/currentsMaxAll", 1, &SchunkServer::cb_currentsMaxAll, &schunkServer);
-	ros::Subscriber movePosition = n.subscribe("/movePosition", 10, &SchunkServer::cb_movePosition, &schunkServer);
-//	n.subscribe("/movePositions", 1, &C_Callbacks::cb_movePositions, &listener);
-	ros::Subscriber moveVelocity = n.subscribe("/moveVelocity", 10, &SchunkServer::cb_moveVelocity, &schunkServer);
-	ros::Subscriber targetVelocity = n.subscribe("/targetVelocity", 10, &SchunkServer::cb_targetVelocity, &schunkServer);
-	ros::Subscriber targetAcceleration = n.subscribe("/targetAcceleration", 10, &SchunkServer::cb_targetAcceleration, &schunkServer);
-//	ros::Subscriber startPosition = n.subscribe("/startPosition", 1, &PubsAndSubs::cb_startPosition, &services);
-
-	ros::Subscriber command = n.subscribe("command", 1, &SchunkServer::cb_commandTrajectory, &schunkServer);
-
 
 
 	/// start main loop
