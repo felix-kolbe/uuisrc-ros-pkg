@@ -2,7 +2,6 @@
 #define __SCITOSBASE__
 
 #include <MetraLabsBase.h>
-#include <MDebug.h> // for MTime
 #include <config/MLRobotic_config.h>
 #include <base/Application.h>
 #include <robot/Robot.h>
@@ -13,11 +12,11 @@ using namespace MetraLabs::robotic::robot;
 
 
 class ScitosBase {
-    
-    public:
+
+	public:
 	ScitosBase(const char*, int pArgc, char* pArgv[]);
 	~ScitosBase();
-	
+
 	void publish_odometry(double x, double y, double theta, double v, double w);
 	void get_odometry(double& x, double& y, double& theta, double& v, double& w);
 
@@ -30,10 +29,10 @@ class ScitosBase {
 			int16_t pRemainingTime, int16_t pChargerStatus);
 	void get_batteryState(float& pVoltage, float& pCurrent, int16_t& pChargeState,
 			int16_t& pRemainingTime, int16_t& pChargerStatus);
-	
+
 	void set_velocity(double v, double w);
 	void loop();
-	
+
 	void reset_bumper() {
 		tBumperResetCmd->set(0, true, true, MetraLabs::base::MTime::now());
 	}
@@ -45,21 +44,21 @@ class ScitosBase {
 	FeatureType getFeature(std::string name);
 
 
-    private:
+	private:
 	class OdometryCallbackHandler : public BlackboardDataUpdateCallback
 	{
-	    public:
-	    OdometryCallbackHandler(ScitosBase* base) : BlackboardDataUpdateCallback() {
-	    	m_base = base;
-	    }
-	    
-	    void set_base(ScitosBase* base) {
-	    	m_base = base;
-	    }
-		
-	    private:
-	    // Implementation of BlackboardDataUpdateCallback
-	    void dataChanged(const BlackboardData* pData) {
+		public:
+		OdometryCallbackHandler(ScitosBase* base) : BlackboardDataUpdateCallback() {
+			m_base = base;
+		}
+
+		void set_base(ScitosBase* base) {
+			m_base = base;
+		}
+
+		private:
+		// Implementation of BlackboardDataUpdateCallback
+		void dataChanged(const BlackboardData* pData) {
 			const BlackboardDataOdometry* tOdometryData = dynamic_cast<const BlackboardDataOdometry*>(pData);
 			if (tOdometryData != NULL) {
 				MTime tTime;
@@ -73,26 +72,26 @@ class ScitosBase {
 							tVelocity.getVelocityRotational());
 
 			}
-	    }
-	    
-	    ScitosBase* m_base;
+		}
+
+		ScitosBase* m_base;
 	};
 
-    private:
+	private:
 	class SonarCallbackHandler : public BlackboardDataUpdateCallback
 	{
-	    public:
+		public:
 		SonarCallbackHandler(ScitosBase* base) : BlackboardDataUpdateCallback() {
-	    	m_base = base;
-	    }
-	    
-	    void set_base(ScitosBase* base) {
-	    	m_base = base;
-	    }
+			m_base = base;
+		}
 
-	    private:
-	    // Implementation of BlackboardDataUpdateCallback
-	    void dataChanged(const BlackboardData* pData) {
+		void set_base(ScitosBase* base) {
+			m_base = base;
+		}
+
+		private:
+		// Implementation of BlackboardDataUpdateCallback
+		void dataChanged(const BlackboardData* pData) {
 			const BlackboardDataRange* tSonarData = dynamic_cast<const BlackboardDataRange*>(pData);
 			if (tSonarData != NULL) {
 				MTime tTime;
@@ -107,27 +106,27 @@ class ScitosBase {
 				m_base->publish_sonar(tRangeMeasurements);
 				m_base->publish_sonar_config(tSonarData->getConfig());
 			}
-	    }
+		}
 
-	    ScitosBase* m_base;
+		ScitosBase* m_base;
 	};
 
 
-    private:
+	private:
 	class BatteryStateCallbackHandler : public BlackboardDataUpdateCallback
 	{
-	    public:
+		public:
 		BatteryStateCallbackHandler(ScitosBase* base) : BlackboardDataUpdateCallback() {
-	    	m_base = base;
-	    }
+			m_base = base;
+		}
 
-	    void set_base(ScitosBase* base) {
-	    	m_base = base;
-	    }
+		void set_base(ScitosBase* base) {
+			m_base = base;
+		}
 
-	    private:
-	    // Implementation of BlackboardDataUpdateCallback
-	    void dataChanged(const BlackboardData* pData) {
+		private:
+		// Implementation of BlackboardDataUpdateCallback
+		void dataChanged(const BlackboardData* pData) {
 			const BlackboardDataBatteryState* tBatteryStateData = dynamic_cast<const BlackboardDataBatteryState*>(pData);
 			if (tBatteryStateData != NULL) {
 				MTime tTime;
@@ -140,12 +139,12 @@ class ScitosBase {
 						tBatteryStateData->getChargerStatus()
 						);
 			}
-	    }
+		}
 
-	    ScitosBase* m_base;
+		ScitosBase* m_base;
 	};
 
-    private:
+	private:
 	Application* tApp;
 	ClassFactory* tClassFactory;
 	Blackboard* tBlackboard;
@@ -160,13 +159,13 @@ class ScitosBase {
 	OdometryCallbackHandler tOdometryHandler;
 	SonarCallbackHandler tSonarHandler;
 	BatteryStateCallbackHandler tBatteryStateHandler;
-	
+
 	double m_x;
 	double m_y;
 	double m_theta;
 	double m_v;
 	double m_w;
-	
+
 	double m_command_v;
 	double m_command_w;
 

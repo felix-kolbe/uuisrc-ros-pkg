@@ -21,6 +21,8 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 	m_pRemainingTime = 0;
 	m_pChargerStatus = 0;
 
+	mSonarConfig = NULL;
+
 	using namespace MetraLabs::base;
 	using namespace MetraLabs::robotic::base;
 	using namespace MetraLabs::robotic::robot;
@@ -254,6 +256,9 @@ ScitosBase::~ScitosBase() {
 	// Destroy the robot
 	if ((tErr = tRobot->destroyClient()) != OK)
 		fprintf(stderr, "ERROR: Failed to destroy the robot system. Code: %s\n", getErrorString(tErr).c_str());
+
+	// Delete the application object
+	delete tApp;
 }
 
 
