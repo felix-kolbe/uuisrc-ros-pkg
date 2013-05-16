@@ -2,8 +2,8 @@
 
 	<param name="robot_description" command="cat $(find metralabs_ros)/Models/scitos_haw_schunk.urdf" />
 		
-	<!-- joint_state_publisher: produces joints states for mimic joints -->
-	<node pkg="joint_state_publisher" type="joint_state_publisher" name="schunk_state_de_mimic_er">
+	<!-- joint_state_publisher: produces joints states for mimicked joints -->
+	<node pkg="joint_state_publisher" type="joint_state_publisher" name="schunk_state_de_mimick_er">
 	    <remap from="joint_states" to="/schunk/position/joint_states" />
 	    <!--<param name="source_list" value="[/schunk/position/pre_mimic/joint_states]" />-->
 	    <rosparam param="source_list">['/schunk/position/pre_mimic/joint_states']</rosparam>
@@ -11,14 +11,14 @@
 	    <!-- this one is only because the official joint_state_publisher doesn't handle URDF mimic joints -->
 	    <rosparam param="dependent_joints">{GR_Fneg: {parent: GR_Fpos, factor: 0.5 }}</rosparam>
 	    
-	    <param name="rate" type="int" value="10" />
+	    <param name="rate" type="int" value="30" />
 <!-- 	    <param name="tf_prefix" type="string" value="/schunk/position" /> -->
 	</node>
 		
 	 <!-- Robot state publisher: publishes tf information regarding the position of the arm -->
 	<node pkg="robot_state_publisher" type="state_publisher" name="schunk_state_publisher">
 	    <remap from="joint_states" to="/schunk/position/joint_states" />
-	    <param name="publish_frequency" type="double" value="10.0" />
+	    <param name="publish_frequency" type="double" value="30.0" />
 <!-- 	    <param name="tf_prefix" type="string" value="/schunk/position" /> -->
 	</node>
 	
