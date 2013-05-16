@@ -60,7 +60,7 @@ public:
 
 	TrajectoryExecuter(ros::NodeHandle& nh_, std::string action_server_name) :
 		as_(nh_, action_server_name, boost::bind(&TrajectoryExecuter::executeCB, this, _1), false),
-	    action_name_(action_server_name)
+		action_name_(action_server_name)
 	{
 		run = false;
 		arm = NULL;
@@ -74,7 +74,7 @@ public:
 		state_publisher = n.advertise<pr2_controllers_msgs::JointTrajectoryControllerState>("state", 1);
 
 		std::map<std::string, unsigned int>::iterator it;
-		for (it = nameToNumber.begin(); it != nameToNumber.end(); it++) {
+		for (it = nameToNumber.begin(); it != nameToNumber.end(); ++it) {
 			state_msg.joint_names.push_back((*it).first );
 		}
 		state_msg.desired.positions.resize(nameToNumber.size());
@@ -85,7 +85,7 @@ public:
 		state_msg.error.positions.resize(nameToNumber.size());
 		state_msg.error.velocities.resize(nameToNumber.size());
 
-	    as_.start();
+		as_.start();
 	}
 
 	void main() {
@@ -95,10 +95,18 @@ public:
 				waiting = true;
 				bool gotit = false;
 				while (!run){
-					gotit = cond.timed_wait(lock, boost::posix_time::milliseconds(100));
+					try {
+						boost::this_thread::interruption_point();
+						gotit = cond.timed_wait(lock, boost::posix_time::milliseconds(100));
+					}
+					catch(const boost::thread_interrupted&) {
+						ROS_WARN("Trajectory thread was interrupted and returns now.");
+						arm->pc_normal_stop();
+						return;
+					}
 					if (! gotit) {
 						//Let's make people happy by publishing a state message
-						for (unsigned int joint_i = 0; joint_i<nameToNumber.size(); joint_i++) {
+						for (unsigned int joint_i = 0; joint_i<nameToNumber.size(); ++joint_i) {
 							//fill in the message
 							state_msg.desired = state_msg.actual;
 							state_msg.actual.positions[joint_i] = RAD_TO_DEG(arm->mManipulator.getModules().at(joint_i).status_pos);
@@ -169,12 +177,12 @@ private:
 	void follow_trajectory() {
 		//I am not entirely sure that this code actually looks like real-time
 		ros::Time trajStartTime = ros::Time::now();
-		for (unsigned int step=0; step<traj.points.size(); step++) {
+		for (unsigned int step = 0; step < traj.points.size(); ++step) {
 			trajectory_msgs::JointTrajectoryPoint& point = traj.points[step];
 
 			ROS_INFO_STREAM("Trajectory thread executing step "<<step);
 			//now apply speed to each joint
-			for (unsigned int joint_i = 0; joint_i<traj.joint_names.size(); joint_i++) {
+			for (unsigned int joint_i = 0; joint_i < traj.joint_names.size(); ++joint_i) {
 
 				unsigned int id = nameToNumber[traj.joint_names[joint_i]];
 				float velRad = point.velocities[joint_i];
@@ -260,7 +268,7 @@ public:
 
 		// for each trajectory step...
 		unsigned int steps = traj.points.size();
-		for (unsigned int step_i = 0; step_i < steps; step_i++) {
+		for (unsigned int step_i = 0; step_i < steps; ++step_i) {
 
 			// check that preempt has not been requested by the client
 			if (as_.isPreemptRequested() || !ros::ok()) {
@@ -280,7 +288,7 @@ public:
 			ROS_INFO_STREAM("Trajectory thread executing step "<<step_i<<"+1/"<<steps<<" until "<<trajStep.time_from_start<<" s / "<<(trajStartTime+trajStep.time_from_start));
 
 			// for each joint in step...
-			for (unsigned int joint_i = 0; joint_i < traj.joint_names.size(); joint_i++) {
+			for (unsigned int joint_i = 0; joint_i < traj.joint_names.size(); ++joint_i) {
 
 				int id = nameToNumber[traj.joint_names[joint_i]];
 
@@ -365,9 +373,9 @@ public:
 			ROS_INFO("Trajectory done, waiting for joints to stop...");
 			bool all_joints_stopped;
 			do {
-				ros::Duration(0.06).sleep();
+				ros::WallDuration(0.06).sleep();
 				all_joints_stopped = true;
-				for (unsigned int joint_i = 0; joint_i < traj.joint_names.size(); joint_i++) {
+				for (unsigned int joint_i = 0; joint_i < traj.joint_names.size(); ++joint_i) {
 					uint8_t moving, brake, foo;
 					float foofl;
 					arm->getModuleStatus(joint_i, &foo, &moving, &foo, &foo, &foo, &brake, &foo, &foo, &foo, &foofl);
@@ -400,13 +408,14 @@ private:
 	sensor_msgs::JointState m_currentJointState;
 	metralabs_ros::SchunkStatus m_schunkStatus;
 	ros::NodeHandle m_node;
-	std::vector<urdf::Joint*> m_joints;
+	std::vector<boost::shared_ptr<urdf::Joint> > m_joints;
 	urdf::Model m_armModel;	// A parsing of the model description
 	ros::Publisher m_currentJointStatePublisher;
 	ros::Publisher m_schunkStatusPublisher;
 	std::map<std::string, unsigned int> m_nameToNumber;
 
 	TrajectoryExecuter m_executer;
+	boost::thread m_executerThread;
 
 
 	ros::Subscriber targetJointStateSubscriberPositionControl;
@@ -425,7 +434,6 @@ private:
 	ros::Subscriber moveVelocity;
 	ros::Subscriber targetVelocity;
 	ros::Subscriber targetAcceleration;
-//	ros::Subscriber startPosition;
 
 	ros::Subscriber command;
 
@@ -442,14 +450,15 @@ public:
 	void init() {
 		// Initialise the arm model parser and find out what non-fixed joints are present
 		m_armModel.initParam("robot_description");
-		std::map<std::string, boost::shared_ptr<urdf::Joint> >::iterator mapElement;
-		for (mapElement = m_armModel.joints_.begin(); mapElement!=m_armModel.joints_.end(); mapElement++) {
-			ROS_DEBUG_STREAM("Joint: Name="<< (*mapElement).second.get()->name << " Mimic=" << (*mapElement).second.get()->mimic );
-			if ((*mapElement).second.get()->type != urdf::Joint::FIXED
-					&& (*mapElement).second.get()->mimic == 0)	// check if it's a virtual joint mimicing a physical
-				m_joints.push_back((*mapElement).second.get() ); // shared pointer mantaged?
+		std::map<std::string, boost::shared_ptr<urdf::Joint> >::const_iterator mapElement;
+		for (mapElement = m_armModel.joints_.begin(); mapElement != m_armModel.joints_.end(); ++mapElement) {
+			boost::shared_ptr<urdf::Joint> joint = mapElement->second;
+			ROS_DEBUG_STREAM("Joint: Name="<<joint->name<<" MimicPtr="<<joint->mimic);
+			if (joint->type != urdf::Joint::FIXED &&
+					joint->mimic == 0)	// ignore virtual joints mimicking a physical one
+				m_joints.push_back(joint);
 		}
-		ROS_INFO("URDF specifies %d non-fixed joints.", m_joints.size() );
+		ROS_INFO("URDF specifies %d non-fixed non-mimicking joints.", m_joints.size());
 
 
 		ros::Duration(3).sleep(); // let arm start up
@@ -465,7 +474,7 @@ public:
 		m_currentJointState.name.resize(m_joints.size());
 		m_currentJointState.position.resize(m_joints.size());
 		m_currentJointState.velocity.resize(m_joints.size());
-		for (unsigned int i=0;i<m_joints.size();i++) {
+		for (unsigned int i = 0; i < m_joints.size(); ++i) {
 			m_currentJointState.name[i] = m_joints[i]->name;
 			m_nameToNumber[m_joints[i]->name] = i;
 			ROS_INFO("%d is mapping to %s", i, m_joints[i]->name.c_str());
@@ -473,19 +482,17 @@ public:
 		m_currentJointStatePublisher = m_node.advertise<sensor_msgs::JointState>("/schunk/position/joint_states", 1);
 
 		// Set up the schunk status publisher
-		m_schunkStatusPublisher = m_node.advertise<metralabs_ros::SchunkStatus>("/schunk/status",1);
-		for (uint i=0; i<m_joints.size();i++) {
+		m_schunkStatusPublisher = m_node.advertise<metralabs_ros::SchunkStatus>("/schunk/status", 1);
+		for (uint i = 0; i < m_joints.size(); ++i) {
 			metralabs_ros::SchunkJointStatus status;
 			status.jointName = m_joints[i]->name;
 			m_schunkStatus.joints.push_back(status);
 		}
 
-//		m_executer.arm = &m_powerCube; 			changed them to private and args
-//		m_executer.nameToNumber = m_nameToNumber;
 		m_executer.init(m_node, &m_powerCube, m_nameToNumber);
 
-		ROS_INFO("Starting the thread");
-		boost::thread(start_thread, &m_executer);
+		ROS_INFO("Starting the trajectory executer thread");
+		m_executerThread = boost::thread(start_thread, &m_executer);
 
 
 		/*
@@ -511,17 +518,21 @@ public:
 		current = m_node.subscribe("/current", 10, &SchunkServer::cb_current, this);
 		currentsMaxAll = m_node.subscribe("/currentsMaxAll", 1, &SchunkServer::cb_currentsMaxAll, this);
 		movePosition = m_node.subscribe("/movePosition", 10, &SchunkServer::cb_movePosition, this);
-	//	m_node.subscribe("/movePositions", 1, &C_Callbacks::cb_movePositions, &listener);
 		moveVelocity = m_node.subscribe("/moveVelocity", 10, &SchunkServer::cb_moveVelocity, this);
 		targetVelocity = m_node.subscribe("/targetVelocity", 10, &SchunkServer::cb_targetVelocity, this);
 		targetAcceleration = m_node.subscribe("/targetAcceleration", 10, &SchunkServer::cb_targetAcceleration, this);
-	//	startPosition = m_node.subscribe("/startPosition", 1, &PubsAndSubs::cb_startPosition, &services);
 
 		command = m_node.subscribe("command", 1, &SchunkServer::cb_commandTrajectory, this);
 
 
-		ROS_INFO("Ready");
+		ROS_INFO("SchunkServer Ready");
 
+	}
+
+	~SchunkServer() {
+		m_executer.stop();
+		m_executerThread.interrupt();
+		m_executerThread.join();
 	}
 
 	void cb_emergency(const std_msgs::Bool::ConstPtr& dummy) 	{
@@ -574,17 +585,12 @@ public:
 		m_powerCube.pc_move_position(data->id, data->value);
 	}
 
-//	void cb_movePositions(const metralabs_ros::Float32MultiArray::ConstPtr& data)
-//	{
-//		ROS_INFO("cb_movePositions");
-//	}
-
 	void cb_moveVelocity(const metralabs_ros::idAndFloat::ConstPtr& data)	{
 		ROS_INFO("cb_moveVelocity: [%d, %f]", data->id, data->value);
 		if (data->value == 0.0)
-	        m_powerCube.pc_normal_stop(data->id);
-	    else
-		    m_powerCube.pc_move_velocity(data->id, data->value);
+			m_powerCube.pc_normal_stop(data->id);
+		else
+			m_powerCube.pc_move_velocity(data->id, data->value);
 	}
 
 	void cb_targetVelocity(const metralabs_ros::idAndFloat::ConstPtr& data)	{
@@ -597,14 +603,10 @@ public:
 		m_powerCube.pc_set_target_acceleration(data->id, data->value);
 	}
 
-//	void cb_startPosition(const std_msgs::Int8::ConstPtr& id)	{
-//		ROS_INFO("cb_startPosition: [%d]", id->data);
-//		m_powerCube.pc_start_position(id->data);
-//	}
 
 	void publishCurrentJointState () {
 		m_currentJointState.header.stamp = ros::Time::now();
-		for (unsigned int i=0;i<m_currentJointState.name.size(); i++) {
+		for (unsigned int i = 0; i < m_currentJointState.name.size(); ++i) {
 #if SCHUNK_NOT_AMTEC != 0
 			SCHUNKMotionManipulator::ModuleConfig modCfg = m_powerCube.mManipulator.getModules().at(i);
 			m_currentJointState.position[i]=DEG_TO_RAD(modCfg.status_pos);
@@ -621,7 +623,7 @@ public:
 	void publishSchunkStatus() {
 		std::vector<metralabs_ros::SchunkJointStatus>::iterator i;
 		uint moduleNumber;
-		for (i=m_schunkStatus.joints.begin(); i != m_schunkStatus.joints.end(); i++) {
+		for (i = m_schunkStatus.joints.begin(); i != m_schunkStatus.joints.end(); ++i) {
 			moduleNumber=m_nameToNumber[(*i).jointName];
 			m_powerCube.getModuleStatus(moduleNumber,&((*i).referenced),
 													&((*i).moving),
@@ -647,7 +649,7 @@ public:
 		float rad_to_degrees_needed = 1;
 #endif
 
-		for (uint i=0;i<data.get()->name.size();i++) {
+		for (uint i = 0; i < data.get()->name.size(); ++i) {
 			string joint_name = data.get()->name[i];
 			int joint_number = m_nameToNumber[joint_name];
 			ROS_INFO_STREAM("cb_PositionControl: joint "<<joint_name<<" (#"<<joint_number<<")");
@@ -683,20 +685,20 @@ public:
 		// Not all the joints have to be specified in the message
 		// and not all types must be filled
 //		m_powerCube.pc_ack();
-		for (uint i=0;i<data.get()->name.size();i++) {
+		for (uint i = 0; i < data.get()->name.size(); ++i) {
 			string joint_name = data.get()->name[i];
 			int joint_number = m_nameToNumber[joint_name];
 			ROS_INFO_STREAM("cb_VelocityControl: joint "<<joint_name<<" (#"<<joint_number<<")");
 
 //			m_powerCube.pc_set_currents_max();
 
-			if (data.get()->velocity.size()!=0) {
+			if (data.get()->velocity.size() != 0) {
 				double vel = data.get()->velocity[i] / rad_to_degrees_needed;
 				ROS_INFO_STREAM(" with velocity "<<vel);
 				if (vel == 0.0)
-			        m_powerCube.pc_normal_stop(joint_number);
-			    else
-				    m_powerCube.pc_move_velocity(joint_number, vel);
+					m_powerCube.pc_normal_stop(joint_number);
+				else
+					m_powerCube.pc_move_velocity(joint_number, vel);
 			}
 			if (data.get()->effort.size()!=0) {
 				double eff = data.get()->effort[i];
@@ -721,19 +723,19 @@ public:
 
 
 class RosScitosBase {
-    
-    public:
+
+public:
 	RosScitosBase(ros::NodeHandle& n, ScitosBase* base) :
 		m_node(n),
 		remote_control_next_timeout(),
 		DEAD_REMOTE_CONTROL_TIMEOUT(0.9),
 		activate_remote_control_timeout(true)
 	{
-	    m_base = base;
-	    m_odomPublisher = m_node.advertise<nav_msgs::Odometry> ("odom", 50);
-	    m_sonarPublisher = m_node.advertise<sensor_msgs::Range> ("sonar", 50);
-	    m_commandSubscriber = m_node.subscribe("cmd_vel", 1, &RosScitosBase::driveCommandCallback, this);
-	    m_bumperResetSubscriber = m_node.subscribe("bumper_reset", 1, &RosScitosBase::bumperResetCallback, this);
+		m_base = base;
+		m_odomPublisher = m_node.advertise<nav_msgs::Odometry> ("odom", 50);
+		m_sonarPublisher = m_node.advertise<sensor_msgs::Range> ("sonar", 50);
+		m_commandSubscriber = m_node.subscribe("cmd_vel", 1, &RosScitosBase::driveCommandCallback, this);
+		m_bumperResetSubscriber = m_node.subscribe("bumper_reset", 1, &RosScitosBase::bumperResetCallback, this);
 	}
 	
 	void loop() {
@@ -745,34 +747,33 @@ class RosScitosBase {
 		}
 
 
-	    // The odometry position and velocities of the robot
-	    double x, y, th, vx, vth;
-	    m_base->get_odometry(x,y,th,vx,vth);
-	    
-	    ros::Time currentTime = ros::Time::now();
-	    // since all odometry is 6DOF we'll need a quaternion created from yaw
-	    geometry_msgs::Quaternion odom_quat = tf::createQuaternionMsgFromYaw(th);
+		// The odometry position and velocities of the robot
+		double x, y, th, vx, vth;
+		m_base->get_odometry(x,y,th,vx,vth);
+
+		ros::Time currentTime = ros::Time::now();
+		// since all odometry is 6DOF we'll need a quaternion created from yaw
+		geometry_msgs::Quaternion odom_quat = tf::createQuaternionMsgFromYaw(th);
 
 
 		/// odometry tf
 
-	    geometry_msgs::TransformStamped odom_trans;
-	    odom_trans.header.stamp = currentTime;
-	    odom_trans.header.frame_id = "/odom";
-//	    odom_trans.child_frame_id = "/ScitosBase";
-	    odom_trans.child_frame_id = "/base_link";
+		geometry_msgs::TransformStamped odom_trans;
+		odom_trans.header.stamp = currentTime;
+		odom_trans.header.frame_id = "/odom";
+		odom_trans.child_frame_id = "/base_link";
 
-	    odom_trans.transform.translation.x = x;
-	    odom_trans.transform.translation.y = y;
-	    odom_trans.transform.translation.z = 0.0;
-	    odom_trans.transform.rotation = odom_quat;
+		odom_trans.transform.translation.x = x;
+		odom_trans.transform.translation.y = y;
+		odom_trans.transform.translation.z = 0.0;
+		odom_trans.transform.rotation = odom_quat;
 
-	    //send the transform
-	    m_odom_broadcaster.sendTransform(odom_trans);
+		//send the transform
+		m_odom_broadcaster.sendTransform(odom_trans);
 
 
-	    // send velocity data again loop
-	    m_base->loop();
+		// send velocity data again loop
+		m_base->loop();
 
 
 		/// odometry data
@@ -780,7 +781,6 @@ class RosScitosBase {
 		nav_msgs::Odometry odom_msg;
 		odom_msg.header.stamp = currentTime;
 		odom_msg.header.frame_id = "/odom";
-//	    odom.child_frame_id = "/ScitosBase";
 		odom_msg.child_frame_id = "/base_link";
 
 		//set the position
@@ -801,10 +801,10 @@ class RosScitosBase {
 		/// enable or disable sonar if someone or no one is listening
 		static bool currentSonarStateIsActive = true;
 		if(currentSonarStateIsActive && m_sonarPublisher.getNumSubscribers() == 0) {
-		    m_base->setFeature(FEATURE_SONAR, false);
+			m_base->setFeature(FEATURE_SONAR, false);
 			currentSonarStateIsActive = false;
 		} else if(!currentSonarStateIsActive && m_sonarPublisher.getNumSubscribers() != 0) {
-		    m_base->setFeature(FEATURE_SONAR, true);
+			m_base->setFeature(FEATURE_SONAR, true);
 			currentSonarStateIsActive = true;
 		}
 
@@ -841,7 +841,7 @@ class RosScitosBase {
 					}
 					// broadcast all transforms once
 					std::vector<tf::Transform>::iterator it = sonarTransforms.begin();
-					for (int i=0; it != sonarTransforms.end(); it++) {
+					for (int i = 0; it != sonarTransforms.end(); ++it) {
 						char targetframe[20];
 						sprintf(targetframe, "/sonar/sonar_%02d", i++);
 						m_odom_broadcaster.sendTransform(
@@ -901,11 +901,11 @@ class RosScitosBase {
 
 	//		this is code to send all sonar measurements at one time
 	//			std::vector<RangeData::Measurement>::iterator itM = measurements.begin();
-	//			for(int i=0; itM != measurements.end(); itM++) {
+	//			for(int i=0; itM != measurements.end(); ++itM) {
 	////				std::cout<<itM->range<<" ";
 	//
-	//		    	char targetframe[20];
-	//		    	sprintf(targetframe, "/sonar/sonar_%2d", i++);
+	//				char targetframe[20];
+	//				sprintf(targetframe, "/sonar/sonar_%2d", i++);
 	//				sonar.header.frame_id = targetframe;
 	//				sonar.range = itM->range+1;
 	//
@@ -921,7 +921,7 @@ class RosScitosBase {
 //	private string objectToString(object o) {
 //		std::stringstream ss;
 //	}
-	void loop_diagnostics(ros::Publisher* diagnosticsPublisher) {
+	void loop_diagnostics(ros::Publisher &diagnosticsPublisher) {
 		float pVoltage;
 		float pCurrent;
 		int16_t pChargeState;
@@ -989,7 +989,7 @@ class RosScitosBase {
 		/// combine and publish statii as array
 		diagnostic_msgs::DiagnosticArray diagArray;
 		diagArray.status.push_back(batteryStatus);
-		diagnosticsPublisher->publish(diagArray);
+		diagnosticsPublisher.publish(diagArray);
 
 	}
 
@@ -1035,7 +1035,7 @@ class RosScitosBase {
 		MAKRO_GET_FEATURE(StatusDisplayLED);
 	}
 
-    private:	
+private:
 	ros::NodeHandle m_node;
 	ScitosBase* m_base;
 	tf::TransformBroadcaster m_odom_broadcaster;
@@ -1047,8 +1047,8 @@ class RosScitosBase {
 	ros::Time remote_control_next_timeout;
 	ros::Duration DEAD_REMOTE_CONTROL_TIMEOUT;
 	bool activate_remote_control_timeout;
-    
-    private:
+
+private:
 	void driveCommandCallback(const geometry_msgs::TwistConstPtr& msg) {
 		m_base->set_velocity(msg->linear.x, msg->angular.z);
 		ROS_DEBUG("Received some speeds [%f %f]", msg->linear.x, msg->angular.z);
@@ -1064,7 +1064,7 @@ class RosScitosBase {
 
 
 void diagnosticsPublishingLoop(ros::NodeHandle& n, RosScitosBase& ros_scitos,
-		ros::Publisher* diagnosticsPublisher, ros::Rate loop_rate)
+		ros::Publisher &diagnosticsPublisher, ros::Rate loop_rate)
 {
 	while (n.ok()) {
 		ros_scitos.loop_diagnostics(diagnosticsPublisher);
@@ -1117,7 +1117,7 @@ int main(int argc, char **argv)
 	ROS_INFO("Starting robot base...");
 	ScitosBase base(scitos_config_file.c_str(), argc, argv);
 
-    base.setFeature(FEATURE_SONAR, false);
+	base.setFeature(FEATURE_SONAR, false);
 
 	if(!disable_arm) {
 		ros::Duration(0.5).sleep(); // let ScitosBase connect to robot
@@ -1133,10 +1133,10 @@ int main(int argc, char **argv)
 	ROS_INFO("Starting diagnostics...");
 
 	ros::Publisher diagnosticsPublisher = n.advertise<diagnostic_msgs::DiagnosticArray> ("/diagnostics", 50);
-  	boost::thread(diagnosticsPublishingLoop, n, ros_scitos, &diagnosticsPublisher, ros::Rate(2));
+	boost::thread(diagnosticsPublishingLoop, n, boost::ref(ros_scitos), boost::ref(diagnosticsPublisher), ros::Rate(2));
 
 
-  	/// intialize dynamic_reconfigure
+	/// intialize dynamic_reconfigure
 
 	ROS_INFO("Starting dynamic_reconfigure...");
 
@@ -1159,12 +1159,12 @@ int main(int argc, char **argv)
 	lock.unlock();
 
 	// init reconfigure publisher
-	boost::thread(dynamicReconfigureUpdaterLoop, n, ros_scitos, boost::ref(dynamicReconfigureServer),
+	boost::thread(dynamicReconfigureUpdaterLoop, n, boost::ref(ros_scitos), boost::ref(dynamicReconfigureServer),
 			boost::ref(dyn_reconf_mutex), ros::Rate(2));
 
 	// init reconfigure callback
 	dynamic_reconfigure::Server<metralabs_ros::ScitosG5Config>::CallbackType f;
-	f = boost::bind(&RosScitosBase::dynamic_reconfigure_callback, ros_scitos, _1, _2);
+	f = boost::bind(&RosScitosBase::dynamic_reconfigure_callback, boost::ref(ros_scitos), _1, _2);
 	dynamicReconfigureServer.setCallback(f);
 
 
@@ -1185,13 +1185,15 @@ int main(int argc, char **argv)
 		schunkServer.publishSchunkStatus();
 
 		ros_scitos.loop();
-		
+
 		// This will adjust as needed per iteration
-		loop_rate.sleep();
+		if(!loop_rate.sleep())
+			ROS_WARN("ScitosServer loop missed its desired interval of %.3f seconds: the loop actually took %.3f.",
+				loop_rate.expectedCycleTime().toSec(), loop_rate.cycleTime().toSec());
 	}
 
-    base.setFeature(FEATURE_ARM, false);
-    base.setFeature(FEATURE_SONAR, false);
+	base.setFeature(FEATURE_ARM, false);
+	base.setFeature(FEATURE_SONAR, false);
 
 	return 0;
 }
