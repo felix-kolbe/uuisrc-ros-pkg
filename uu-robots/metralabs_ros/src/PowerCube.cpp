@@ -10,30 +10,37 @@ using namespace std;
 #endif
 
 
-PowerCube::PowerCube() {
-//	init();
-
+PowerCube::PowerCube() :
+		modulesNum(0)
+{
 }
 
 void PowerCube::init() {
+#if SCHUNK_NOT_AMTEC != 0
 	ROS_INFO("Searching SCHUNK motion modules. Please wait...");
+#else
+	ROS_INFO("Searching AMTEC motion modules. Please wait...");
+#endif
 	Error tErr = mManipulator.initialize();
 	if (tErr != OK) {
-		ROS_ERROR("Failed to initialise the SCHUNK Manipulator.");
+		ROS_ERROR("Failed to initialise the SCHUNK Manipulator. Code: %s\n", getErrorString(tErr).c_str());
 		exit(1);
 	}
-	mmModules = mManipulator.getModules();
 	modulesNum = mManipulator.getModules().size();
 
+#if SCHUNK_NOT_AMTEC != 0
 	ROS_INFO("Found %d SCHUNK modules", modulesNum);
+#else
+	ROS_INFO("Found %d AMTEC modules", modulesNum);
+#endif
 
 	pc_ack(); // needed to ref the gripper
 }
 
 int PowerCube::pc_emergency_stop() {
-	for (unsigned int id = 0; id < mManipulator.getModules().size(); id++)
+	for (unsigned int id = 0; id < modulesNum; ++id)
 	{
-		if(id == mManipulator.getModules().size()-1)
+		if(id == modulesNum-1)
 			ROS_WARN("emergency: ignoring module %d", id+ID_OFFSET);
 		else {
 			ROS_WARN("emergency stopping module %d", id+ID_OFFSET);
@@ -48,19 +55,18 @@ int PowerCube::pc_emergency_stop() {
 }
 
 int PowerCube::pc_normal_stop() {
-	for (unsigned int id = 0; id < modulesNum; id++)
+	for (unsigned int id = 0; id < modulesNum; ++id)
 		pc_normal_stop(id);
 	return 0;
 }
 
 int PowerCube::pc_normal_stop(int id) {
 #if SCHUNK_NOT_AMTEC != 0
-  mManipulator.stop(id + ID_OFFSET);
+	mManipulator.stop(id + ID_OFFSET);
 #else
-  mManipulator.softStop(id + ID_OFFSET);
-
+	mManipulator.softStop(id + ID_OFFSET);
 #endif
-  return 0;
+	return 0;
 }
 
 int PowerCube::pc_first_ref() {
@@ -80,7 +86,7 @@ int PowerCube::pc_first_ref() {
 }
 
 int PowerCube::pc_ack() {
-	for (unsigned int id = 0; id < mmModules.size(); id++) {
+	for (unsigned int id = 0; id < modulesNum; ++id) {
 #if SCHUNK_NOT_AMTEC != 0
 		const SCHUNKMotionManipulator::ModuleConfig *moduleConfig;
 		mManipulator.getModuleConfig(id + ID_OFFSET, moduleConfig);
@@ -120,8 +126,8 @@ int PowerCube::pc_ack(int id) {
 }
 
 int PowerCube::pc_ref() {
-	for (unsigned int id = 0; id < mManipulator.getModules().size(); id++) {
-		if(id == mManipulator.getModules().size()-1)
+	for (unsigned int id = 0; id < modulesNum; ++id) {
+		if(id == modulesNum-1)
 			;// dont ref the gripper anymore
 		else {
 			pc_ack(id);
@@ -156,7 +162,7 @@ int PowerCube::pc_set_current(int id, float i) {
 }
 
 int PowerCube::pc_set_currents_max() {
-	for (unsigned int id = 0; id < mManipulator.getModules().size(); id++)
+	for (unsigned int id = 0; id < modulesNum; ++id)
 		pc_set_current(id, mManipulator.getModules().at(id).max_current);
 	return 0;
 }
@@ -207,7 +213,7 @@ int PowerCube::pc_set_target_acceleration(int id, float a) {
 int PowerCube::pc_move_positions(float angles[5])
 {
 	// for not using the gripper (crash the camera) use 7
-	for (unsigned int id = 0; id < modulesNum; id++)
+	for (unsigned int id = 0; id < modulesNum; ++id)
 		pc_move_position(id, angles[id]);
 
 	return 0;

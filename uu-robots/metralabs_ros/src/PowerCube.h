@@ -18,28 +18,13 @@ using namespace MetraLabs::robotic::hardware;
 //#define SCHUNK_NOT_AMTEC 0 	moved to ScitosServer
 
 class PowerCube {
-private:
-
 
 public:
-	unsigned int modulesNum;
-	PowerCube() ;
-	 void init();
-	//  int modulesNumI;
 
-	//  PowerCube();
-	//  PowerCube(SCHUNKMotionManipulator*);
+	PowerCube();
 
-#if SCHUNK_NOT_AMTEC != 0
-	SCHUNKMotionManipulator mManipulator;
 
-	SCHUNKMotionManipulator::ModuleVector mmModules; // Condition of the modules
-#else
-	AmtecManipulator mManipulator;
-
-	AmtecManipulator::ModuleVector mmModules; // Condition of the modules
-#endif
-
+	void init();
 
 	int pc_emergency_stop();
 	int pc_normal_stop();
@@ -59,9 +44,16 @@ public:
 
 	int pc_move_positions(float angles[]);
 
-	void getModuleStatus(int moduleID, uint8_t *referenced, uint8_t *moving,	uint8_t *progMode,	uint8_t *warning, 	uint8_t *error, uint8_t *brake, uint8_t *moveEnd, uint8_t *posReached,uint8_t *errorCode, float *current );
+	void getModuleStatus(int moduleID, uint8_t *referenced, uint8_t *moving, uint8_t *progMode, uint8_t *warning,
+			uint8_t *error, uint8_t *brake, uint8_t *moveEnd, uint8_t *posReached,uint8_t *errorCode, float *current);
 
-//	virtual int pc_start_position(int position) = 0;
 
+#if SCHUNK_NOT_AMTEC != 0
+	SCHUNKMotionManipulator mManipulator;
+#else
+	AmtecManipulator mManipulator;
+#endif
+
+	unsigned int modulesNum;
 };
 #endif
