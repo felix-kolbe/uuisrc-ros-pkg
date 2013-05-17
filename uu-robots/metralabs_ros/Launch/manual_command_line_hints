@@ -1,5 +1,10 @@
+
 # robot_description
 rosparam set -t  `rospack find metralabs_ros`/Models/scitos_haw_only.urdf robot_description
 
 # base wo arm with MDebug
 /home/demo/ros_workspace/Sensorik/uuisrc-ros-pkg/uu-robots/metralabs_ros/bin/ScitosServer schunk_description:=robot_description state:=/schunk/trajectory/state command:=/schunk/trajectory/command /schunk/position/joint_states:=/schunk/position/pre_mimic/joint_states __name:=metralabs_ros disable_arm:=true -MDebugLevel 5
+
+
+valgrind --leak-check=yes --track-origins=yes     ../bin/ScitosServer schunk_description:=robot_description state:=/schunk/trajectory/state command:=/schunk/trajectory/command /schunk/position/joint_states:=/schunk/position/pre_mimic/joint_states __name:=metralabs_ros disable_arm:=true -MDebugLevel 3
+
