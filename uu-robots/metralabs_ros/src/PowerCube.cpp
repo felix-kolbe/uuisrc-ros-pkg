@@ -218,35 +218,37 @@ int PowerCube::pc_move_positions(float angles[5])
 
 	return 0;
 }
-void PowerCube::getModuleStatus(int moduleID, uint8_t *referenced, uint8_t *moving,	uint8_t *progMode,	uint8_t *warning, 	uint8_t *error, uint8_t *brake, uint8_t *moveEnd, uint8_t *posReached, uint8_t *errorCode, float *current ){
+void PowerCube::getModuleStatus(int moduleID,
+		uint8_t& referenced, uint8_t& moving, uint8_t& progMode, uint8_t& warning, uint8_t& error,
+		uint8_t& brake, uint8_t& moveEnd, uint8_t& posReached, uint8_t& errorCode, float& current ) {
 #if SCHUNK_NOT_AMTEC != 0
 	const SCHUNKMotionManipulator::ModuleConfig *moduleConfig;
 	mManipulator.getModuleConfig(moduleID + ID_OFFSET, moduleConfig);
 
-	*brake = moduleConfig->status_flags.flags.brake==1;
-	*error = moduleConfig->status_flags.flags.error==1;
-	*moveEnd = moduleConfig->status_flags.flags.move_end==1;
-	*moving = moduleConfig->status_flags.flags.moving==1;
-	*posReached = moduleConfig->status_flags.flags.pos_reached==1;
-	*progMode = moduleConfig->status_flags.flags.prog_mode==1;
-	*referenced = moduleConfig->status_flags.flags.referenced==1;
-	*warning = moduleConfig->status_flags.flags.warning==1;
-	*errorCode = moduleConfig->error_code;
-	*current = moduleConfig->norm_current;
+	brake = moduleConfig->status_flags.flags.brake==1;
+	error = moduleConfig->status_flags.flags.error==1;
+	moveEnd = moduleConfig->status_flags.flags.move_end==1;
+	moving = moduleConfig->status_flags.flags.moving==1;
+	posReached = moduleConfig->status_flags.flags.pos_reached==1;
+	progMode = moduleConfig->status_flags.flags.prog_mode==1;
+	referenced = moduleConfig->status_flags.flags.referenced==1;
+	warning = moduleConfig->status_flags.flags.warning==1;
+	errorCode = moduleConfig->error_code;
+	current = moduleConfig->norm_current;
 
 #else
 	const AmtecManipulator::ModuleConfig *moduleConfig;
 	mManipulator.getModuleConfig(moduleID + ID_OFFSET, moduleConfig);
-	*brake = moduleConfig->status_flags.flags.brake==1;
-	*error = moduleConfig->status_flags.flags.error==1;
-	*moveEnd = moduleConfig->status_flags.flags.halted==1; // TODO check if used correctly
-	*moving = moduleConfig->status_flags.flags.motion==1;
-	*posReached = moduleConfig->status_flags.flags.brake==0; // TODO // no better equivalent // really?
-	*progMode = 0; // no equivalent
-	*referenced = moduleConfig->status_flags.flags.home_ok==1;
-	*warning = moduleConfig->status_flags.flags.cur_limit==1;
-	*errorCode = 0; // TODO no equivalent, check if needed by caller
-	*current = moduleConfig->status_cur;
+	brake = moduleConfig->status_flags.flags.brake==1;
+	error = moduleConfig->status_flags.flags.error==1;
+	moveEnd = moduleConfig->status_flags.flags.halted==1; // TODO check if used correctly
+	moving = moduleConfig->status_flags.flags.motion==1;
+	posReached = moduleConfig->status_flags.flags.brake==0; // TODO // no better equivalent // really?
+	progMode = 0; // no equivalent
+	referenced = moduleConfig->status_flags.flags.home_ok==1;
+	warning = moduleConfig->status_flags.flags.cur_limit==1;
+	errorCode = 0; // TODO no equivalent, check if needed by caller
+	current = moduleConfig->status_cur;
 
 #endif
 

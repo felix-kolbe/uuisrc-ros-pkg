@@ -378,7 +378,7 @@ public:
 				for (unsigned int joint_i = 0; joint_i < traj.joint_names.size(); ++joint_i) {
 					uint8_t moving, brake, foo;
 					float foofl;
-					arm->getModuleStatus(joint_i, &foo, &moving, &foo, &foo, &foo, &brake, &foo, &foo, &foo, &foofl);
+					arm->getModuleStatus(joint_i, foo, moving, foo, foo, foo, brake, foo, foo, foo, foofl);
 //					if(moving) {
 					if(!brake) {
 						all_joints_stopped = false;
@@ -621,20 +621,12 @@ public:
 	}
 
 	void publishSchunkStatus() {
-		std::vector<metralabs_ros::SchunkJointStatus>::iterator i;
+		std::vector<metralabs_ros::SchunkJointStatus>::iterator it;
 		uint moduleNumber;
-		for (i = m_schunkStatus.joints.begin(); i != m_schunkStatus.joints.end(); ++i) {
-			moduleNumber=m_nameToNumber[(*i).jointName];
-			m_powerCube.getModuleStatus(moduleNumber,&((*i).referenced),
-													&((*i).moving),
-													&((*i).progMode),
-													&((*i).warning),
-													&((*i).error),
-													&((*i).brake),
-													&((*i).moveEnd),
-													&((*i).posReached),
-													&((*i).errorCode),
-													&((*i).current));
+		for (it = m_schunkStatus.joints.begin(); it != m_schunkStatus.joints.end(); ++it) {
+			moduleNumber = m_nameToNumber[it->jointName];
+			m_powerCube.getModuleStatus(moduleNumber, it->referenced, it->moving, it->progMode, it->warning,
+					it->error, it->brake, it->moveEnd, it->posReached, it->errorCode, it->current);
 		}
 		m_schunkStatusPublisher.publish(m_schunkStatus);
 	}
@@ -1012,8 +1004,8 @@ public:
 		MAKRO_SET_FEATURE(StatusDisplayLED);
 
 		ROS_DEBUG("Now reading again: (why is this rubbish?)");	// TODO fix me
-		metralabs_ros::ScitosG5Config configg;
-		get_features(configg);
+		metralabs_ros::ScitosG5Config config_read;
+		get_features(config_read);
 	}
 
 	void get_features(metralabs_ros::ScitosG5Config &config) {
@@ -1179,6 +1171,7 @@ int main(int argc, char **argv)
 	ROS_INFO("Initializing done, starting loop");
 	ros::Rate loop_rate(30);
 	while (n.ok()) {
+		// TODO: Consider replacing spinOnce with AsyncSpinner to uncouple callbacks. But check thread-safety before!
 		ros::spinOnce();
 
 		schunkServer.publishCurrentJointState();
