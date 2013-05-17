@@ -1,8 +1,8 @@
 <robot name="schunk_arm_5dof" xmlns:xacro="http://ros.org/wiki/xacro">
 
-<include filename="$(find metralabs_ros)/Models/xacro/links.xacro" />
+<include filename="$(find metralabs_ros)/models/xacro/links.xacro" />
 <!-- Joints -->
-<include filename="$(find metralabs_ros)/Models/xacro/joints.xacro" />
+<include filename="$(find metralabs_ros)/models/xacro/joints.xacro" />
 
 <!-- Links -->
 

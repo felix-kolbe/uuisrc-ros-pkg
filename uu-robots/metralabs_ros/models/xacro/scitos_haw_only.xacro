@@ -1,6 +1,6 @@
 <robot name="scitos_haw_only" xmlns:xacro="http://ros.org/wiki/xacro">
 
-<include filename="$(find metralabs_ros)/Models/xacro/scitos_haw_properties.xacro" />
+<include filename="$(find metralabs_ros)/models/xacro/scitos_haw_properties.xacro" />
 
 
 <link name="base_link"><!--Odometry origin, former called ScitosBase -->

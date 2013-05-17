@@ -2,13 +2,13 @@
 	<machine name="Enagh" address="enagh" ros-root="/opt/ros/diamondback/ros" ros-package-path="/localhome/pezzotto/ROS:/opt/ros/diamondback/stacks" user="pezzotto" />
 	<machine name="Robotlab3" address="192.168.1.3" ros-root="/opt/ros/cturtle/ros" ros-package-path="/home/pezzotto/ROS:/opt/ros/cturtle/stacks" user="pezzotto" />
 	
-	<param name="robot_description" command="cat $(find metralabs_ros)/Models/model_7dof.xml" />
-	<param name="schunk_description" command="cat $(find metralabs_ros)/Models/model_7dof.xml" />
+	<param name="robot_description" command="cat $(find metralabs_ros)/models/model_7dof.xml" />
+	<param name="schunk_description" command="cat $(find metralabs_ros)/models/model_7dof.xml" />
 		
 	 <!-- Robot state publisher: publishes tf information regarding the position of the arm -->
 	<node pkg="robot_state_publisher" type="state_publisher" name="schunk_state_publisher" machine="Enagh">	    	    
 	    <remap from="joint_states" to="/schunk/position/joint_states" />
-	    <param name="publish_frequency" type="double" value="10.0" />
+	    <param name="publish_frequency" type="double" value="30.0" />
 <!-- 	    <param name="tf_prefix" type="string" value="/schunk/position" /> -->
 	</node>
 	

@@ -3,8 +3,8 @@
 	<machine name="Hand" address="hand" ros-root="/usr/src/ros/ros" ros-package-path="/home/hand/Projects/shadow_robot:/usr/src/ros" user="hand" password="hand"  timeout="30" />
 	<machine name="Robotlab3" address="192.168.1.3" ros-root="/opt/ros/cturtle/ros" ros-package-path="/home/pezzotto/ROS:/opt/ros/cturtle/stacks" user="pezzotto" />
 	
-	<param name="robot_description" command="cat $(find metralabs_ros)/Models/arm_hand.urdf" />
-	<param name="schunk_description" command="cat $(find metralabs_ros)/Models/arm_5dof.urdf" />
+	<param name="robot_description" command="cat $(find metralabs_ros)/models/arm_hand.urdf" />
+	<param name="schunk_description" command="cat $(find metralabs_ros)/models/arm_5dof.urdf" />
 	<param name="hand_description" textfile="$(find sr_hand)/model/robots/shadowhand_motor.urdf"/>
 		
 	<!-- The Arm/Base node -->

@@ -1,6 +1,6 @@
 <launch>
 
-	<param name="robot_description" command="cat $(find metralabs_ros)/Models/scitos_haw_only.urdf" />
+	<param name="robot_description" command="cat $(find metralabs_ros)/models/scitos_haw_only.urdf" />
 		
 	 <!-- Robot state publisher: publishes tf information regarding the position of the arm -->
 	<node pkg="robot_state_publisher" type="state_publisher" name="schunk_state_publisher">

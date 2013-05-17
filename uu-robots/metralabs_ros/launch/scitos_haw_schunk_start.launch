@@ -1,6 +1,6 @@
 <launch>
 
-	<param name="robot_description" command="cat $(find metralabs_ros)/Models/scitos_haw_schunk.urdf" />
+	<param name="robot_description" command="cat $(find metralabs_ros)/models/scitos_haw_schunk.urdf" />
 		
 	<!-- joint_state_publisher: produces joints states for mimicked joints -->
 	<node pkg="joint_state_publisher" type="joint_state_publisher" name="schunk_state_de_mimick_er">

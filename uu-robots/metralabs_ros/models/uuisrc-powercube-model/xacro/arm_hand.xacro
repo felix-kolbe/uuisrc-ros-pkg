@@ -1,7 +1,7 @@
 <robot name="schunk_arm_hand" xmlns:xacro="http://ros.org/wiki/xacro">
 
 <!-- Arm -->
-<include filename="$(find metralabs_ros)/Models/xacro/arm_5dof.xacro" />
+<include filename="$(find metralabs_ros)/models/xacro/arm_5dof.xacro" />
 
 <!-- Hand -->
 <include filename="$(find sr_hand)/model/robots/xacro/shadowhand_motor.urdf.xacro" />

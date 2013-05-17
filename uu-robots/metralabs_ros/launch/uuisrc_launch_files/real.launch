@@ -1,5 +1,5 @@
 <launch>
-    <param name="schunk_description" command="cat $(find metralabs_ros)/Models/model.xml" />
+    <param name="schunk_description" command="cat $(find metralabs_ros)/models/model.xml" />
     
 	
     <!-- Robot state publisher: publishes tf information regarding the 
