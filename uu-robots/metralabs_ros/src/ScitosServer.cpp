@@ -1,5 +1,6 @@
 
 #include <boost/thread.hpp>
+#include <boost/noncopyable.hpp>
 
 #include <ros/ros.h>
 #include <actionlib/server/simple_action_server.h>
@@ -54,7 +55,7 @@ using namespace MetraLabs::robotic::robot;
 
 
 
-class TrajectoryExecuter {
+class TrajectoryExecuter : private boost::noncopyable {
 
 public:
 
@@ -402,7 +403,7 @@ void start_thread(TrajectoryExecuter *exec) {
 	exec->main();
 }
 
-class SchunkServer {
+class SchunkServer : private boost::noncopyable {
 private:
 	PowerCube m_powerCube;
 	sensor_msgs::JointState m_currentJointState;
@@ -714,7 +715,7 @@ public:
 
 
 
-class RosScitosBase {
+class RosScitosBase : private boost::noncopyable {
 
 public:
 	RosScitosBase(ros::NodeHandle& n, ScitosBase* base) :

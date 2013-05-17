@@ -1,6 +1,8 @@
 #ifndef __SCITOSBASE__
 #define __SCITOSBASE__
 
+#include <boost/noncopyable.hpp>
+
 #include <MetraLabsBase.h>
 #include <config/MLRobotic_config.h>
 #include <base/Application.h>
@@ -11,7 +13,7 @@ using namespace MetraLabs::robotic::base;
 using namespace MetraLabs::robotic::robot;
 
 
-class ScitosBase {
+class ScitosBase : private boost::noncopyable {
 
 	public:
 	ScitosBase(const char*, int pArgc, char* pArgv[]);

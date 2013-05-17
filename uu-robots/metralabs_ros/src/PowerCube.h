@@ -4,6 +4,8 @@
 #include <iostream>
 #include <string>
 
+#include <boost/noncopyable.hpp>
+
 #include <MetraLabsBase.h>
 #include <hardware/SCHUNKMotionManipulator.h>
 #include <hardware/AmtecManipulator.h>
@@ -17,7 +19,7 @@ using namespace MetraLabs::robotic::hardware;
 
 //#define SCHUNK_NOT_AMTEC 0 	moved to ScitosServer
 
-class PowerCube {
+class PowerCube : private boost::noncopyable {
 
 public:
 
