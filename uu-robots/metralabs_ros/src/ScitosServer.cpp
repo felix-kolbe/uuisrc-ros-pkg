@@ -461,11 +461,17 @@ public:
 		}
 		ROS_INFO("URDF specifies %d non-fixed non-mimicking joints.", m_joints.size());
 
-
-		ros::Duration(3).sleep(); // let arm start up
-
 		// Initialise the powercube
 		m_powerCube.init();
+
+		// Check if reinitialisation is needed
+		while(m_powerCube.modulesNum != m_joints.size()) {
+			ROS_WARN("Reinitialising robot arm... found %d joints but need %d", m_powerCube.modulesNum, m_joints.size());
+			m_powerCube.~PowerCube();
+			ros::WallDuration(1).sleep(); // let arm start up
+			new (&m_powerCube) PowerCube;
+			m_powerCube.init();
+		}
 
 		// Check that the required modules are present.
 		ROS_WARN("Didn't check that the modules in the description match modules in reality.");
