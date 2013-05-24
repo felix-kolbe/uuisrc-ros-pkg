@@ -35,11 +35,13 @@ class RosCommunication():
     def __init__(self):
         description = rospy.get_param("schunk_description")
         robot = xml.dom.minidom.parseString(description).getElementsByTagName('robot')[0]
-        self.free_joints = {}
-        self.joint_lookup={}
-        self.joint_list = [] # for maintaining the original order of the joints
-        self.currentJointStates=JointState()
-        self.currentSchunkStatus=SchunkStatus()
+        self.joint_name_to_config_dict = {}
+        self.joint_name_to_index_dict = {}
+        self.joint_names_list = []    # joint names in real order
+        self.currentJointStates = JointState()
+        self.currentJointStates_jointIndex_to_msgIndex_dict = {}
+        self.currentSchunkStatus = SchunkStatus()
+        self.currentSchunkStatus_jointIndex_to_msgIndex_dict = {}
         self.dependent_joints = rospy.get_param("dependent_joints", {})
        
         if rospy.has_param("~tip_name"):
@@ -57,7 +59,7 @@ class RosCommunication():
             rospy.logwarn("No root name specified, end effector position won't work")
             self.__root = "none"
         
-        # Find all non-fixed joints
+        # Find all non-fixed non-mimicking joints
         self.numModules = 0
         for child in robot.childNodes:
             if child.nodeType is child.TEXT_NODE:
@@ -67,7 +69,7 @@ class RosCommunication():
                 if jtype == 'fixed':
                     continue
                     
-                # encoding needed for most lookups like "self.roscomms.joint_list[module]"
+                # encoding needed for most lookups like "self.roscomms.joint_names_list[module]"
                 name = child.getAttribute('name').encode('ascii')
                 if jtype == 'continuous':
                     minval = -pi
@@ -86,10 +88,13 @@ class RosCommunication():
                     zeroval = 0
 
                 joint = {'min':minval, 'max':maxval, 'zero':zeroval, 'value':zeroval }
-                self.free_joints[name] = joint              # store joint
-                self.joint_list.append(name)                # store joints name
-                self.joint_lookup[name] = self.numModules   # store index for joint
-                self.numModules += 1                
+                self.joint_name_to_config_dict[name] = joint    # store joint
+                self.joint_names_list.append(name)    # store joints name
+                self.joint_name_to_index_dict[name] = self.numModules    # store index for joint
+                
+                rospy.loginfo("Registered joint with index '%d' and name '%s'.", self.numModules, name)
+                
+                self.numModules += 1
 
         # Setup all of the pubs and subs
         self.velocityPub = rospy.Publisher(VELOCITY_CMD_TOPIC, JointState)
@@ -121,14 +126,43 @@ class RosCommunication():
         
         
     def jointStateUpdate(self, data):
-        #new joint states
+        """ Store new joint states data and calculate the index lookup dict as the message might not be sorted.
+        
+        In other words: When the joint has real index x, which index does it have in this message?
+        So no states consuming method should sort or search in the msg name array anymore!
+        """
         self.currentJointStates = data
-        pass
+        
+        # get name_to_index dict for message
+        self.currentJointStates_jointIndex_to_msgIndex_dict = {}
+        for msg_i in range(len(self.currentJointStates.name)):
+            msg_name = self.currentJointStates.name[msg_i]
+            try:
+                name_i = self.joint_name_to_index_dict[msg_name]
+                self.currentJointStates_jointIndex_to_msgIndex_dict[name_i] = msg_i
+            except KeyError:
+                # message removed because this case is happening with mimicking joints
+                # rospy.logwarn("JointStatus message contains a joint I don't know from the robot_description: %s.", msg_name)
+                pass
     
     def schunkStatusUpdate(self, data):
-        #schunk status
+        """ Store new schunk status data and calculate the index lookup dict as the message might not be sorted.
+        
+        In other words: When the joint has real index x, which index does it have in this message?
+        So no status consuming method should sort or search in the msg name array anymore!
+        """  
         self.currentSchunkStatus = data
-        pass
+        
+        # get name_to_index dict for message
+        self.currentSchunkStatus_jointIndex_to_msgIndex_dict = {}
+        for msg_i in range(len(self.currentSchunkStatus.joints)):
+            msg_name = self.currentSchunkStatus.joints[msg_i].jointName
+            try:
+                name_i = self.joint_name_to_index_dict[msg_name]
+                self.currentSchunkStatus_jointIndex_to_msgIndex_dict[name_i] = msg_i
+            except KeyError:
+                rospy.logwarn("SchunkStatus message contains a joint I don't know from the robot_description: %s.", msg_name)
+
 
     # The actual communication loop
     def loop(self):
@@ -136,7 +170,6 @@ class RosCommunication():
         r = rospy.Rate(hz) 
         
         while not rospy.is_shutdown():
-            msg = JointState()
             self.targetPosition.header.stamp = rospy.Time.now()
 
             # Publish commands if wanted
@@ -174,9 +207,6 @@ class RosCommunication():
             r.sleep()
             
     def getEndPosition(self):
-        #TODO: these frames are hard coded - need to make them parameters
-#        frame_from = '/schunk/position/PAM112_BaseConector'
-#        frame_to = '/schunk/position/GripperBox'
         frame_from = self.__root
         frame_to = self.__tip
 
@@ -185,7 +215,7 @@ class RosCommunication():
             self.tfListener.waitForTransform(frame_from, frame_to, now, rospy.Duration(3.0))
             (trans,rot) = self.tfListener.lookupTransform(frame_from, frame_to, now)
         except (tf.LookupException, tf.ConnectivityException):
-            print "Can't get end effector transform.!"
+            rospy.logerr("Can't get end effector transform!")
             return 0, 0, 0, 0, 0, 0, 0
         return trans[0], trans[1], trans[2], rot[0], rot[1], rot[2], rot[3]
 
@@ -199,8 +229,8 @@ class SchunkTextControl:
         
         # roscomms
         self.roscomms = RosCommunication()
+        # run roscomms in a seperate thread
         self.roscommsThread = Thread(target=self.roscomms.loop)
-        #Thread(target=self.roscomms.loop).start() # run roscomms in a seperate thread
         self.roscommsThread.start()
         
         # get number of modules
@@ -217,7 +247,7 @@ class SchunkTextControl:
         self.commandWidget = self.wTree.get_object("command")
         
         # bindings
-        bindings = {"on_window1_destroy":self.shutdown, 
+        bindings = {"on_window1_destroy":self.window_shutdown, 
                     "on_buttonClear_clicked":self.clear, 
                     "on_buttonExecute_clicked":self.execute, 
                     "on_command_changed":self.command_changed,
@@ -249,6 +279,9 @@ class SchunkTextControl:
         # Text input field of comboboxentry command is a gtk.Entry object
         entry = self.commandWidget.get_children()[0]
         entry.connect("activate", self.command_enter_pressed, self.commandWidget)
+        
+        # make gui close from external request like rosnode kill
+        rospy.on_shutdown(lambda: gtk.main_quit())
 
         # handle history
         self.historyLength = 100
@@ -281,11 +314,11 @@ class SchunkTextControl:
         self.limitsStrings = []
         for i in range(0,self.numModules):
             self.pose.append(0)
-            moduleName = self.roscomms.joint_list[i]
-            minLimit = self.roscomms.free_joints[moduleName]["min"]
+            moduleName = self.roscomms.joint_names_list[i]
+            minLimit = self.roscomms.joint_name_to_config_dict[moduleName]["min"]
             minLimit *= 180 / pi
             minLimit = int(minLimit) - 1
-            maxLimit = self.roscomms.free_joints[moduleName]["max"]
+            maxLimit = self.roscomms.joint_name_to_config_dict[moduleName]["max"]
             maxLimit *= 180 / pi
             maxLimit = int(maxLimit) + 1
             self.modules_minlimits.append(minLimit)
@@ -305,7 +338,7 @@ class SchunkTextControl:
         for i in range (0,self.numModules):
             #name = "joint " + str(i) + ":"
             #name = str(i) + ":"
-            name = str(i) + " (" + self.roscomms.joint_list[i] + "):"
+            name = str(i) + " (" + self.roscomms.joint_names_list[i] + "):"
             vbox = gtk.VBox(False, 0)
             posesframe_vboxes.append(vbox)
             label = gtk.Label(name)
@@ -329,7 +362,7 @@ class SchunkTextControl:
         velframe_labels = []
         self.velframe_spinButtons = []
         for i in range (0,self.numModules):
-            name = str(i) + " (" + self.roscomms.joint_list[i] + "):"
+            name = str(i) + " (" + self.roscomms.joint_names_list[i] + "):"
             vbox = gtk.VBox(False, 0)
             velframe_vboxes.append(vbox)
             label = gtk.Label(name)
@@ -366,7 +399,7 @@ class SchunkTextControl:
         self.flags = []
         for i in range(self.numModules):
             # joint index
-            label = gtk.Label(str(i) + " (" + self.roscomms.joint_list[i] + "):")
+            label = gtk.Label(str(i) + " (" + self.roscomms.joint_names_list[i] + "):")
             #label.set_justify(gtk.JUSTIFY_LEFT)
             label.set_alignment(0, 0.5)
             self.tableFlags.attach(label, 0, 1, 1+i, 1+i+1) # need to skip first title row
@@ -405,13 +438,15 @@ class SchunkTextControl:
         self.dictJointsAngles_set_appropriate_buttons_sensitive()
         
 
-    def shutdown(self, widget):
+    def window_shutdown(self, widget):
         # kill gtk thread
         gtk.main_quit()
-        # kill roscomms thread
-        self.roscommsThread.join(0) # I think it is dead!
+
         # kill ros thread
         rospy.signal_shutdown("Because I said so!")
+        
+        # Wait for roscomm thread to stop
+        self.roscommsThread.join()
 
 
     def parser(self, string):
@@ -938,7 +973,7 @@ class SchunkTextControl:
                             if self.inDegrees:
                                 value = value * pi / 180
                             self.roscomms.targetPosition.name=[]
-                            self.roscomms.targetPosition.name.append(self.roscomms.joint_list[module])
+                            self.roscomms.targetPosition.name.append(self.roscomms.joint_names_list[module])
                             self.roscomms.targetPosition.position = [value]
                             #print self.roscomms.targetPosition
                             self.roscomms.setPosition = True
@@ -948,7 +983,7 @@ class SchunkTextControl:
                         # move from spinbutton if tokens[2] not given
                         value = float(self.posesframe_spinButtons[module].get_value()) * pi / 180
                         self.roscomms.targetPosition.name=[]
-                        self.roscomms.targetPosition.name.append(self.roscomms.joint_list[module])
+                        self.roscomms.targetPosition.name.append(self.roscomms.joint_names_list[module])
                         self.roscomms.targetPosition.position = [value]
                         #print self.roscomms.targetPosition
                         self.roscomms.setPosition = True 
@@ -967,11 +1002,11 @@ class SchunkTextControl:
         self.roscomms.targetPosition.name=[]
         self.roscomms.targetPosition.position=[]
         for module in range(0,self.numModules):
-            name = self.roscomms.joint_list[module]
+            name = self.roscomms.joint_names_list[module]
             self.roscomms.targetPosition.name.append(name)
             value = float(self.posesframe_spinButtons[module].get_value())
             if self.inDegrees: # convert to radians, else it is already in radians
-                 value *= pi / 180
+                value *= pi / 180
             self.roscomms.targetPosition.position.append(value)
             #print roscomms.targetPosition
             self.roscomms.setPosition = True
@@ -1011,7 +1046,7 @@ class SchunkTextControl:
         self.roscomms.targetVelocity.name=[]
         self.roscomms.targetVelocity.velocity=[]
         for module in range(0,self.numModules):
-            name = self.roscomms.joint_list[module]
+            name = self.roscomms.joint_names_list[module]
             self.roscomms.targetVelocity.name.append(name)
             value = 0.0
             self.roscomms.targetVelocity.velocity.append(value)
@@ -1040,7 +1075,7 @@ class SchunkTextControl:
                         try:
                             value = float(value) * pi / 180
                             self.roscomms.targetVelocity.name=[]
-                            self.roscomms.targetPosition.name.append(self.roscomms.joint_list[module])
+                            self.roscomms.targetPosition.name.append(self.roscomms.joint_names_list[module])
                             self.roscomms.targetVelocity.velocity = [value]
                             self.roscomms.setVelocity = True
                         except:
@@ -1049,7 +1084,7 @@ class SchunkTextControl:
                         # move from spinbutton if tokens[2] not given
                         value = float(self.velframe_spinButtons[module].get_value()) * pi / 180
                         self.roscomms.targetVelocity.name=[]
-                        self.roscomms.targetPosition.name.append(self.roscomms.joint_list[module])
+                        self.roscomms.targetPosition.name.append(self.roscomms.joint_names_list[module])
                         self.roscomms.targetVelocity.velocity = [value]
                         self.roscomms.setVelocity = True 
                 else:
@@ -1067,7 +1102,7 @@ class SchunkTextControl:
         self.roscomms.targetVelocity.name=[]
         self.roscomms.targetVelocity.velocity=[]
         for i in range(0,self.numModules):
-            name = self.roscomms.joint_list[i]
+            name = self.roscomms.joint_names_list[i]
             self.roscomms.targetVelocity.name.append(name)
             value = float(self.velframe_spinButtons[i].get_value()) * pi / 180
             self.roscomms.targetVelocity.velocity.append(value)
@@ -1107,15 +1142,11 @@ class SchunkTextControl:
 
     def update_flags(self, *args):
         for module_i in range(self.numModules):
-            # find index of current module in msg currentJointStates
-            msg_i = -1
-            for names_i in range(len(self.roscomms.currentJointStates.name)):
-                if self.roscomms.joint_list[module_i] == self.roscomms.currentJointStates.name[names_i]:
-                    msg_i = names_i
-                    break
-            
-            # if found..
-            if msg_i != -1:
+            ## joint state
+            try:
+                # lookup index in message for current module
+                msg_i = self.roscomms.currentJointStates_jointIndex_to_msgIndex_dict[module_i]
+                
                 label = self.flags[module_i][self.flagsDict["Position"]]
                 flagRadians = self.roscomms.currentJointStates.position[msg_i]            
                 flag = flagRadians * 180 / pi
@@ -1125,19 +1156,15 @@ class SchunkTextControl:
                 label.set_text(string)
                 #flag = round(flag, 2)
                 #label.set_text(str(flag))
-            else:
-                self.wTree.get_object("status").set_text("Error: Joint '"+self.roscomms.joint_list[module_i]+"' not found in joint state message!")
+            except KeyError:
+                self.wTree.get_object("status").set_text("Error: Joint '"+self.roscomms.joint_names_list[module_i]+"' not found in JointState message!")
                 self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
             
-            # find index of current module in msg currentSchunkStatus
-            msg_i = -1
-            for names_i in range(len(self.roscomms.currentSchunkStatus.joints)):
-                if self.roscomms.joint_list[module_i] == self.roscomms.currentSchunkStatus.joints[names_i].jointName:
-                    msg_i = names_i
-                    break
-            
-            # if found..
-            if msg_i != -1:
+            ## schunk status
+            try:
+                # lookup index in message for current module
+                msg_i = self.roscomms.currentSchunkStatus_jointIndex_to_msgIndex_dict[module_i]
+
                 label = self.flags[module_i][self.flagsDict["Referenced"]]
                 flag = self.roscomms.currentSchunkStatus.joints[msg_i].referenced
                 label.set_text(str(flag))
@@ -1209,8 +1236,8 @@ class SchunkTextControl:
                     label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
                 else:
                     label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#000000'))
-            else:
-                self.wTree.get_object("status").set_text("Error: Joint '"+self.roscomms.joint_list[module_i]+"' not found in schunk status message!")
+            except:
+                self.wTree.get_object("status").set_text("Error: Joint '"+self.roscomms.joint_names_list[module_i]+"' not found in SchunkStatus message!")
                 self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
             
         return True
@@ -1218,31 +1245,26 @@ class SchunkTextControl:
 
     def on_buttonCopyCurrent_clicked(self, widget):
         for module_i in range(self.numModules):
-            # find index of current module in msg currentJointStates
-            msg_i = -1
-            for names_i in range(len(self.roscomms.currentJointStates.name)):
-                if self.roscomms.joint_list[module_i] == self.roscomms.currentJointStates.name[names_i]:
-                    msg_i = names_i
-                    break
-            
-            # if found..
-            if msg_i != -1:
-                flagRadians = float(self.roscomms.currentJointStates.position[msg_i])
+            try:
+                # lookup index in message for current module
+                msg_i = self.roscomms.currentJointStates_jointIndex_to_msgIndex_dict[module_i]
+                
+                posRadians = float(self.roscomms.currentJointStates.position[msg_i])
                 if self.inDegrees:
-                    flag = flagRadians * 180 / pi
-                    if (flag < 0.05) and (flag > -0.05):
-                        flag = 0.0
+                    posDegrees = posRadians * 180 / pi
+                    if (posDegrees < 0.05) and (posDegrees > -0.05):
+                        posDegrees = 0.0
 #Neither work                        
-#                    string = "%.4f" % flag
-#                    flag = float(string)
+#                    string = "%.4f" % posDegrees
+#                    posDegrees = float(string)
 # or
-#                    flag = round(flag, 4)
-                    self.posesframe_spinButtons[module_i].set_value(flag)
+#                    posDegrees = round(posDegrees, 4)
+                    self.posesframe_spinButtons[module_i].set_value(posDegrees)
                 else:
-#                    flagRadians = round(flagRadians, 4)
-                    self.posesframe_spinButtons[module_i].set_value(flagRadians)
-            else:
-                self.wTree.get_object("status").set_text("Error: Joint '"+self.roscomms.joint_list[module_i]+"' not found in joint state message!")
+#                    posRadians = round(posRadians, 4)
+                    self.posesframe_spinButtons[module_i].set_value(posRadians)
+            except KeyError:
+                self.wTree.get_object("status").set_text("Error: Joint '"+self.roscomms.joint_names_list[module_i]+"' not found in joint state message!")
                 self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
         pass
 
