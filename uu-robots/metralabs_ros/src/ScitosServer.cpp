@@ -101,7 +101,7 @@ public:
 						gotit = cond.timed_wait(lock, boost::posix_time::milliseconds(100));
 					}
 					catch(const boost::thread_interrupted&) {
-						ROS_WARN("Trajectory thread was interrupted and returns now.");
+						ROS_INFO("Trajectory thread was interrupted and returns, stopping the arm.");
 						arm->pc_normal_stop();
 						return;
 					}
@@ -226,7 +226,7 @@ private:
 		}
 	}
 
-private: // by Felix
+private:
 	PowerCube* arm;
 	std::map<std::string, unsigned int> nameToNumber;
 	trajectory_msgs::JointTrajectory traj;
@@ -399,9 +399,6 @@ public:
 
 };
 
-void start_thread(TrajectoryExecuter *exec) {
-	exec->main();
-}
 
 class SchunkServer : private boost::noncopyable {
 private:
@@ -499,7 +496,7 @@ public:
 		m_executer.init(m_node, &m_powerCube, m_nameToNumber);
 
 		ROS_INFO("Starting the trajectory executer thread");
-		m_executerThread = boost::thread(start_thread, &m_executer);
+		m_executerThread = boost::thread(boost::bind(&TrajectoryExecuter::main, &m_executer));
 
 
 		/*
@@ -724,13 +721,13 @@ public:
 class RosScitosBase : private boost::noncopyable {
 
 public:
-	RosScitosBase(ros::NodeHandle& n, ScitosBase* base) :
+	RosScitosBase(ros::NodeHandle& n, ScitosBase& base) :
 		m_node(n),
+		m_base(base),
 		remote_control_next_timeout(),
 		DEAD_REMOTE_CONTROL_TIMEOUT(0.9),
 		activate_remote_control_timeout(true)
 	{
-		m_base = base;
 		m_odomPublisher = m_node.advertise<nav_msgs::Odometry> ("odom", 50);
 		m_sonarPublisher = m_node.advertise<sensor_msgs::Range> ("sonar", 50);
 		m_commandSubscriber = m_node.subscribe("cmd_vel", 1, &RosScitosBase::driveCommandCallback, this);
@@ -738,85 +735,80 @@ public:
 	}
 	
 	void loop() {
-		// dead remote control check
+
+		/// dead remote control check
+
 		if(activate_remote_control_timeout && ros::Time::now() > remote_control_next_timeout) {
 			ROS_INFO("remote control timeout after nonzero command, stopping robot");
-			m_base->set_velocity(0, 0);
+			m_base.set_velocity(0, 0);
 			activate_remote_control_timeout = false;
 		}
 
 
-		// The odometry position and velocities of the robot
+		// forward velocity data to inner ScitosBase loop
+		m_base.loop();
+
+
+		/// The odometry position and velocities of the robot
 		double x, y, th, vx, vth;
-		m_base->get_odometry(x,y,th,vx,vth);
+		m_base.get_odometry(x,y,th,vx,vth);
 
 		ros::Time currentTime = ros::Time::now();
 		// since all odometry is 6DOF we'll need a quaternion created from yaw
 		geometry_msgs::Quaternion odom_quat = tf::createQuaternionMsgFromYaw(th);
 
-
 		/// odometry tf
+		geometry_msgs::TransformStamped odom_tf;
+		odom_tf.header.stamp = currentTime;
+		odom_tf.header.frame_id = "/odom";
+		odom_tf.child_frame_id = "/base_link";
 
-		geometry_msgs::TransformStamped odom_trans;
-		odom_trans.header.stamp = currentTime;
-		odom_trans.header.frame_id = "/odom";
-		odom_trans.child_frame_id = "/base_link";
+		odom_tf.transform.translation.x = x;
+		odom_tf.transform.translation.y = y;
+		odom_tf.transform.translation.z = 0.0;
+		odom_tf.transform.rotation = odom_quat;
 
-		odom_trans.transform.translation.x = x;
-		odom_trans.transform.translation.y = y;
-		odom_trans.transform.translation.z = 0.0;
-		odom_trans.transform.rotation = odom_quat;
-
-		//send the transform
-		m_odom_broadcaster.sendTransform(odom_trans);
-
-
-		// send velocity data again loop
-		m_base->loop();
-
+		// send the transform
+		m_tf_broadcaster.sendTransform(odom_tf);
 
 		/// odometry data
-
 		nav_msgs::Odometry odom_msg;
 		odom_msg.header.stamp = currentTime;
 		odom_msg.header.frame_id = "/odom";
 		odom_msg.child_frame_id = "/base_link";
 
-		//set the position
+		// set the position
 		odom_msg.pose.pose.position.x = x;
 		odom_msg.pose.pose.position.y = y;
-		odom_msg.pose.pose.position.z = 0.0;
 		odom_msg.pose.pose.orientation = odom_quat;
 
-		//set the velocity
+		// set the velocity
 		odom_msg.twist.twist.linear.x = vx;
-		odom_msg.twist.twist.linear.y = 0;
 		odom_msg.twist.twist.angular.z = vth;
 
-		//publish the message
+		// publish the message
 		m_odomPublisher.publish(odom_msg);
 
 
 		/// enable or disable sonar if someone or no one is listening
-		static bool currentSonarStateIsActive = true;
-		if(currentSonarStateIsActive && m_sonarPublisher.getNumSubscribers() == 0) {
-			m_base->setFeature(FEATURE_SONAR, false);
-			currentSonarStateIsActive = false;
-		} else if(!currentSonarStateIsActive && m_sonarPublisher.getNumSubscribers() != 0) {
-			m_base->setFeature(FEATURE_SONAR, true);
-			currentSonarStateIsActive = true;
+		static bool sonar_is_requested = false;
+		bool sonar_had_been_requested = sonar_is_requested;
+
+		sonar_is_requested = m_sonarPublisher.getNumSubscribers() != 0;
+		if(sonar_is_requested != sonar_had_been_requested) {
+			m_base.setFeature(FEATURE_SONAR, sonar_is_requested);
 		}
 
-		if(currentSonarStateIsActive) {
-			static const RangeData::Config* sonarConfig = 0;
+		if(sonar_is_requested) {
+			static const RangeData::Config* sonarConfig = NULL;
 
 			// load config once
-			if (sonarConfig == 0) {
-				m_base->get_sonar_config(sonarConfig);		// TODO what if nonzero rubbish is read?
-//				std::cout << "sonarConfig was 0 and now we read: " << sonarConfig << std::endl;
+			if (sonarConfig == NULL) {
+				m_base.get_sonar_config(sonarConfig);		// TODO what if nonzero rubbish is read?
+//				std::cout << "sonarConfig was NULL and now we read: " << sonarConfig << std::endl;
 			}
 			// if config is loaded, proceed..
-			if (sonarConfig != 0) {
+			if (sonarConfig != NULL) {
 				const RangeData::ConfigCircularArc* sonarConfigCircular =
 						dynamic_cast<const RangeData::ConfigCircularArc*>(sonarConfig);
 
@@ -832,9 +824,9 @@ public:
 					for (unsigned int i = 0; i < sonarConfigCircular->sensor_cnt; ++i) {
 						float x = sonarConfigCircular->offset_from_center * std::cos(angle) -0.075;
 						float y = sonarConfigCircular->offset_from_center * std::sin(angle);
-						tf::Transform* transform = new tf::Transform(
-								tf::Quaternion(0, 0, angle),
-								tf::Vector3(x, y, 0.25));
+						tf::Quaternion quat;
+						quat.setEuler(0, 0, angle);
+						tf::Transform* transform = new tf::Transform(quat, tf::Vector3(x, y, 0.25));
 						sonarTransforms.push_back(*transform);
 						angle += sonarConfigCircular->sensor_angle_dist;
 					}
@@ -843,7 +835,7 @@ public:
 					for (int i = 0; it != sonarTransforms.end(); ++it) {
 						char targetframe[20];
 						sprintf(targetframe, "/sonar/sonar_%02d", i++);
-						m_odom_broadcaster.sendTransform(
+						m_tf_broadcaster.sendTransform(
 								tf::StampedTransform(*it, ros::Time::now(), "/base_link", targetframe)
 							);
 					}
@@ -854,7 +846,7 @@ public:
 				/// sonar data
 
 				std::vector<RangeData::Measurement> measurements;
-				m_base->get_sonar(measurements);
+				m_base.get_sonar(measurements);
 
 				sensor_msgs::Range sonar_msg;
 				sonar_msg.header.stamp = currentTime;
@@ -891,7 +883,7 @@ public:
 					m_sonarPublisher.publish(sonar_msg);
 
 					// resend also one transform (the according, why not)
-					m_odom_broadcaster.sendTransform( tf::StampedTransform(
+					m_tf_broadcaster.sendTransform( tf::StampedTransform(
 							sonarTransforms.at(nextSonarToSend), ros::Time::now(), "/base_link", nextTargetframe ) );
 
 					++nextSonarToSend %= measurements.size();
@@ -917,16 +909,13 @@ public:
 
 	}
 
-//	private string objectToString(object o) {
-//		std::stringstream ss;
-//	}
 	void loop_diagnostics(ros::Publisher &diagnosticsPublisher) {
 		float pVoltage;
 		float pCurrent;
 		int16_t pChargeState;
 		int16_t pRemainingTime;
 		int16_t pChargerStatus;
-		m_base->get_batteryState(pVoltage, pCurrent, pChargeState, pRemainingTime, pChargerStatus);
+		m_base.get_batteryState(pVoltage, pCurrent, pChargeState, pRemainingTime, pChargerStatus);
 
 		diagnostic_msgs::DiagnosticStatus batteryStatus;
 		batteryStatus.level = diagnostic_msgs::DiagnosticStatus::OK;
@@ -989,7 +978,6 @@ public:
 		diagnostic_msgs::DiagnosticArray diagArray;
 		diagArray.status.push_back(batteryStatus);
 		diagnosticsPublisher.publish(diagArray);
-
 	}
 
 	void dynamic_reconfigure_callback(metralabs_ros::ScitosG5Config &config, uint32_t level) {
@@ -997,7 +985,7 @@ public:
 		// and with this macro the actual feature name only has to be named once. Improvements welcome.
 		#define MAKRO_SET_FEATURE(NAME)	\
 			ROS_INFO("Setting feature %s to %s", #NAME, config.NAME?"True":"False"); \
-			m_base->setFeature(#NAME, config.NAME)
+			m_base.setFeature(#NAME, config.NAME)
 
 		MAKRO_SET_FEATURE(EBC0_Enable5V);
 		MAKRO_SET_FEATURE(EBC0_Enable12V);
@@ -1020,7 +1008,7 @@ public:
 		// and with this macro the actual feature name only has to be named once. Improvements welcome.
 		#define MAKRO_GET_FEATURE(NAME)	\
 			ROS_DEBUG("Current hardware feature %s is %s", #NAME, config.NAME?"True":"False"); \
-			config.NAME = m_base->getFeature<typeof(config.NAME)>(std::string(#NAME))
+			config.NAME = m_base.getFeature<typeof(config.NAME)>(std::string(#NAME))
 
 		MAKRO_GET_FEATURE(EBC0_Enable5V);
 		MAKRO_GET_FEATURE(EBC0_Enable12V);
@@ -1035,9 +1023,21 @@ public:
 	}
 
 private:
-	ros::NodeHandle m_node;
-	ScitosBase* m_base;
-	tf::TransformBroadcaster m_odom_broadcaster;
+	void driveCommandCallback(const geometry_msgs::TwistConstPtr& msg) {
+		m_base.set_velocity(msg->linear.x, msg->angular.z);
+		ROS_DEBUG("Received some speeds [%f %f]", msg->linear.x, msg->angular.z);
+		activate_remote_control_timeout = msg->linear.x != 0 || msg->angular.z != 0;
+		remote_control_next_timeout = ros::Time::now() + DEAD_REMOTE_CONTROL_TIMEOUT;
+	}
+
+	void bumperResetCallback(const std_msgs::EmptyConstPtr& dummy) {
+		ROS_INFO("Resetting bumper");
+		m_base.reset_bumper();
+	}
+
+	ros::NodeHandle& m_node;
+	ScitosBase& m_base;
+	tf::TransformBroadcaster m_tf_broadcaster;
 	ros::Publisher m_odomPublisher;
 	ros::Publisher m_sonarPublisher;
 	ros::Subscriber m_commandSubscriber;
@@ -1046,19 +1046,6 @@ private:
 	ros::Time remote_control_next_timeout;
 	ros::Duration DEAD_REMOTE_CONTROL_TIMEOUT;
 	bool activate_remote_control_timeout;
-
-private:
-	void driveCommandCallback(const geometry_msgs::TwistConstPtr& msg) {
-		m_base->set_velocity(msg->linear.x, msg->angular.z);
-		ROS_DEBUG("Received some speeds [%f %f]", msg->linear.x, msg->angular.z);
-		activate_remote_control_timeout = msg->linear.x != 0 || msg->angular.z != 0;
-		remote_control_next_timeout = ros::Time::now() + DEAD_REMOTE_CONTROL_TIMEOUT;
-	}
-
-	void bumperResetCallback(const std_msgs::EmptyConstPtr& dummy) {
-		ROS_INFO("Resetting bumper");
-		m_base->reset_bumper();
-	}
 };
 
 
@@ -1076,9 +1063,7 @@ void dynamicReconfigureUpdaterLoop(ros::NodeHandle& n, RosScitosBase &ros_scitos
 		dynamic_reconfigure::Server<metralabs_ros::ScitosG5Config> &dynamicReconfigureServer,
 		boost::recursive_mutex &mutex, ros::Rate loop_rate)
 {
-
 	metralabs_ros::ScitosG5Config config;
-
 	while (n.ok()) {
 		ros_scitos.get_features(config);// update config to current hardware state
 		boost::recursive_mutex::scoped_lock lock(mutex);
@@ -1086,7 +1071,6 @@ void dynamicReconfigureUpdaterLoop(ros::NodeHandle& n, RosScitosBase &ros_scitos
 		lock.unlock();
 		loop_rate.sleep();
 	}
-
 }
 
 
@@ -1124,7 +1108,7 @@ int main(int argc, char **argv)
 	}
 
 	ROS_INFO("Starting ros base connector...");
-	RosScitosBase ros_scitos(n, &base);
+	RosScitosBase ros_scitos(n, base);
 
 
 	/// intialize diagnostics
@@ -1163,7 +1147,7 @@ int main(int argc, char **argv)
 
 	// init reconfigure callback
 	dynamic_reconfigure::Server<metralabs_ros::ScitosG5Config>::CallbackType f;
-	f = boost::bind(&RosScitosBase::dynamic_reconfigure_callback, boost::ref(ros_scitos), _1, _2);
+	f = boost::bind(&RosScitosBase::dynamic_reconfigure_callback, &ros_scitos, _1, _2);
 	dynamicReconfigureServer.setCallback(f);
 
 
