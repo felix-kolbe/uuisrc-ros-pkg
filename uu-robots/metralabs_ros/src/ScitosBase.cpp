@@ -2,26 +2,26 @@
 #include <iostream>
 
 ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
-	tOdometryHandler(this),
-	tSonarHandler(this),
-	tBatteryStateHandler(this)
+	odometry_handler_(this),
+	sonar_handler_(this),
+	battery_state_handler_(this)
 {
 
-	m_command_v = 0;
-	m_command_w = 0;
-	m_x = 0;
-	m_y = 0;
-	m_theta = 0;
-	m_v = 0;
-	m_w = 0;
+	command_v_ = 0;
+	command_w_ = 0;
+	odom_x_ = 0;
+	odom_y_ = 0;
+	odom_theta_ = 0;
+	odom_v_ = 0;
+	odom_w_ = 0;
 
-	m_pVoltage = 0;
-	m_pCurrent = 0;
-	m_pChargeState = 0;
-	m_pRemainingTime = 0;
-	m_pChargerStatus = 0;
+	battery_voltage_ = 0;
+	battery_current_ = 0;
+	battery_charge_state_ = 0;
+	battery_remaining_time_ = 0;
+	battery_charger_status_ = 0;
 
-	mSonarConfig = NULL;
+	sonar_config_ = NULL;
 
 	using namespace MetraLabs::base;
 	using namespace MetraLabs::robotic::base;
@@ -34,15 +34,15 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 
 	// Create a general application object. This will also initialize
 	// the library MetraLabsBase with the command line arguments.
-	tApp = new Application(pArgc, pArgv);
-	if (tApp == NULL) {
+	app_ = new Application(pArgc, pArgv);
+	if (app_ == NULL) {
 		fprintf(stderr, "FATAL: Can't create the application!\n");
 		exit(-1);
 	}
 
 	// Get the class factory from the application.
-	tClassFactory = tApp->getClassFactory();
-	if (tClassFactory == NULL) {
+	class_factory_ = app_->getClassFactory();
+	if (class_factory_ == NULL) {
 		fprintf(stderr, "FATAL: Cannot get the ClassFactory!\n");
 		exit(-1);
 	}
@@ -57,8 +57,8 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 	///////////////////////////////////////////////////////////////////////////
 
 	// Get the blackboard
-	tBlackboard = tApp->getBlackboard();
-	if (tBlackboard == NULL) {
+	blackboard_ = app_->getBlackboard();
+	if (blackboard_ == NULL) {
 		fprintf(stderr, "FATAL: Cannot get the Blackboard!\n");
 		exit(-1);
 	}
@@ -67,34 +67,34 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 	// Robot creation and start-up
 
 	// Create the robot interface for SCITOS-G5.
-	tRobot = createInstance<Robot>(tClassFactory,
+	robot_ = createInstance<Robot>(class_factory_,
 			"b07fb034-83c1-446c-b2df-0dd6aa46eef6");
-	if (tRobot == NULL) {
+	if (robot_ == NULL) {
 		fprintf(stderr, "FATAL: Failed to create the robot. Abort!\n");
 		exit(-1);
 	}
 
 	// Pre-Initialize the robot
-	if ((tErr = tRobot->preInitializeClient(&tRobotCfg)) != OK) {
+	if ((tErr = robot_->preInitializeClient(&tRobotCfg)) != OK) {
 		fprintf(stderr, "FATAL: Failed to pre-initialize the robot. Code: %s\n", getErrorString(tErr).c_str());
 		exit(-1);
 	}
 
 	// Assign robot to blackboard
-	tRobot->setPhysicalName("Robot",                  "MyRobot");
-	tRobot->setPhysicalName("BatteryState",           "MyRobot.BatteryState");
-	tRobot->setPhysicalName("Drive.Odometry",         "MyRobot.Odometry");
-	tRobot->setPhysicalName("Drive.VelocityCmd",      "MyRobot.VelocityCmd");
-	tRobot->setPhysicalName("RangeFinder.Sonar.Data", "MyRobot.Sonar");
-	tRobot->setPhysicalName("Bumper.Bumper.Data",     "MyRobot.Bumper");
-	tRobot->setPhysicalName("Bumper.Bumper.ResetCmd", "MyRobot.BumperResetCmd");
-	if ((tErr = tRobot->assignToBlackboard(tBlackboard, true)) != OK) {
+	robot_->setPhysicalName("Robot",                  "MyRobot");
+	robot_->setPhysicalName("BatteryState",           "MyRobot.BatteryState");
+	robot_->setPhysicalName("Drive.Odometry",         "MyRobot.Odometry");
+	robot_->setPhysicalName("Drive.VelocityCmd",      "MyRobot.VelocityCmd");
+	robot_->setPhysicalName("RangeFinder.Sonar.Data", "MyRobot.Sonar");
+	robot_->setPhysicalName("Bumper.Bumper.Data",     "MyRobot.Bumper");
+	robot_->setPhysicalName("Bumper.Bumper.ResetCmd", "MyRobot.BumperResetCmd");
+	if ((tErr = robot_->assignToBlackboard(blackboard_, true)) != OK) {
 		fprintf(stderr, "FATAL: Failed to assign the robot to the blackboard. Code: %s\n", getErrorString(tErr).c_str());
 		exit(-1);
 	}
 
 	// Initialize the robot
-	if ((tErr = tRobot->initializeClient(&tRobotCfg)) != OK) {
+	if ((tErr = robot_->initializeClient(&tRobotCfg)) != OK) {
 		fprintf(stderr, "FATAL: Failed to initialize the robot. Code: %s\n", getErrorString(tErr).c_str());
 		exit(-1);
 	}
@@ -103,7 +103,7 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 	// Blackboard activation
 
 	// Start the blackboard.
-	if ((tErr = tBlackboard->startBlackboard()) != OK) {
+	if ((tErr = blackboard_->startBlackboard()) != OK) {
 		fprintf(stderr, "FATAL: Failed to start the blackboard. Code: %s\n", getErrorString(tErr).c_str());
 		exit(-1);
 	}
@@ -111,28 +111,28 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 	///////////////////////////////////////////////////////////////////////////
 	// Odometry callback registration
 
-	tOdometryData = NULL;
-	tErr = getDataFromBlackboard<BlackboardDataOdometry>(tBlackboard,
-			"MyRobot.Odometry", tOdometryData);
+	odometry_data_ = NULL;
+	tErr = getDataFromBlackboard<BlackboardDataOdometry>(blackboard_,
+			"MyRobot.Odometry", odometry_data_);
 	if (tErr != OK) {
 		fprintf(stderr, "FATAL: Failed to get the odometry data from the blackboard! Code: %s\n", getErrorString(tErr).c_str());
 		exit(-1);
 	}
 
-	tOdometryData->addCallback(&tOdometryHandler);
+	odometry_data_->addCallback(&odometry_handler_);
 
 	///////////////////////////////////////////////////////////////////////////
 	// Sonar callback registration
 
-	tSonarData = NULL;
-	tErr = getDataFromBlackboard<BlackboardDataRange>(tBlackboard,
-			"MyRobot.Sonar", tSonarData);
+	sonar_data_ = NULL;
+	tErr = getDataFromBlackboard<BlackboardDataRange>(blackboard_,
+			"MyRobot.Sonar", sonar_data_);
 	if (tErr != OK) {
 		fprintf(stderr, "FATAL: Failed to get the Sonar data from the blackboard! Is it specified in the XML config? Code: %s\n", getErrorString(tErr).c_str());
 //		exit(-1);  no, let the robot start wihtout sonar, even if it wasn't specified in the XML config.
 	}
 	else
-		tSonarData->addCallback(&tSonarHandler);
+		sonar_data_->addCallback(&sonar_handler_);
 
 	//"RangeFinder.Sonar.Data": class BlackboardDataRange (UUID: fa0b925f-d394-4efd-b8ff-8386442d6234)
 
@@ -140,24 +140,24 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 	///////////////////////////////////////////////////////////////////////////
 	// Battery callback registration
 
-	tBatteryStateData = NULL;
-	tErr = getDataFromBlackboard<BlackboardDataBatteryState>(tBlackboard,
-			"MyRobot.BatteryState", tBatteryStateData);
+	battery_state_data_ = NULL;
+	tErr = getDataFromBlackboard<BlackboardDataBatteryState>(blackboard_,
+			"MyRobot.BatteryState", battery_state_data_);
 	if (tErr != OK) {
 		fprintf(stderr, "FATAL: Failed to get the battery state data from the blackboard! Code: %s\n", getErrorString(tErr).c_str());
 		exit(-1);
 	}
 
-	tBatteryStateData->addCallback(&tBatteryStateHandler);
+	battery_state_data_->addCallback(&battery_state_handler_);
 
 
 	///////////////////////////////////////////////////////////////////////////
 	// BumperResetCmd data registration
 
-	tBumperResetCmd = NULL;
+	bumper_reset_cmd_ = NULL;
 
-	tErr = getDataFromBlackboard<BlackboardDataUInt8>(tBlackboard,
-			"MyRobot.BumperResetCmd", tBumperResetCmd);
+	tErr = getDataFromBlackboard<BlackboardDataUInt8>(blackboard_,
+			"MyRobot.BumperResetCmd", bumper_reset_cmd_);
 	if (tErr != OK) {
 		fprintf(stderr, "FATAL: Failed to get the bumper reset command from the blackboard! Code: %s\n", getErrorString(tErr).c_str());
 		exit(-1);
@@ -168,14 +168,14 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 	///////////////////////////////////////////////////////////////////////////
 
 	// Start the robot.
-	if ((tErr = tRobot->startClient()) != OK) {
+	if ((tErr = robot_->startClient()) != OK) {
 		fprintf(stderr, "FATAL: Failed to start the robot system. Code: %s\n", getErrorString(tErr).c_str());
 		exit(-1);
 	}
 
-	tVelocityData = NULL;
-	tErr = getDataFromBlackboard<BlackboardDataVelocity>(tBlackboard, 
-			"MyRobot.VelocityCmd", tVelocityData);
+	velocity_data_ = NULL;
+	tErr = getDataFromBlackboard<BlackboardDataVelocity>(blackboard_, 
+			"MyRobot.VelocityCmd", velocity_data_);
 	if (tErr != OK) {
 		fprintf(stderr, "FATAL: Failed to get the velocity data from the blackboard! Code: %s\n", getErrorString(tErr).c_str());
 		exit(-1);
@@ -185,80 +185,80 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 
 
 void ScitosBase::loop() {
-    tVelocityData->setVelocity(m_command_v, m_command_w);
-    tVelocityData->setModified();
+    velocity_data_->setVelocity(command_v_, command_w_);
+    velocity_data_->setModified();
 }
 
-void ScitosBase::set_velocity(double v, double w) {
-    m_command_v = v;
-    m_command_w = w;
+void ScitosBase::setVelocity(double v, double w) {
+    command_v_ = v;
+    command_w_ = w;
 }
 
-void ScitosBase::publish_odometry(double x, double y, double theta, double v, double w) {
-    m_x = x;
-    m_y = y;
-    m_theta = theta;
-    m_v = v;
-    m_w = w;
+void ScitosBase::publishOdometry(double x, double y, double theta, double v, double w) {
+    odom_x_ = x;
+    odom_y_ = y;
+    odom_theta_ = theta;
+    odom_v_ = v;
+    odom_w_ = w;
 }
-void ScitosBase::get_odometry(double& x, double& y, double& theta, double& v, double& w) {
-    x = m_x;
-    y = m_y;
-    theta = m_theta;
-    v = m_v;
-    w = m_w;
-}
-
-void ScitosBase::publish_sonar(std::vector<RangeData::Measurement> measurements) {
-	mRangeMeasurements = measurements;
-}
-void ScitosBase::get_sonar(std::vector<RangeData::Measurement>& measurements) {
-	measurements = mRangeMeasurements;
+void ScitosBase::getOdometry(double& x, double& y, double& theta, double& v, double& w) {
+    x = odom_x_;
+    y = odom_y_;
+    theta = odom_theta_;
+    v = odom_v_;
+    w = odom_w_;
 }
 
-void ScitosBase::publish_sonar_config(const RangeData::Config* sonarConfig) {
-	mSonarConfig = sonarConfig;
+void ScitosBase::publishSonar(std::vector<RangeData::Measurement> measurements) {
+	range_measurements_ = measurements;
 }
-void ScitosBase::get_sonar_config(const RangeData::Config*& sonarConfig) {
-	sonarConfig = mSonarConfig;
+void ScitosBase::getSonar(std::vector<RangeData::Measurement>& measurements) {
+	measurements = range_measurements_;
+}
+
+void ScitosBase::publishSonarConfig(const RangeData::Config* sonar_config) {
+	sonar_config_ = sonar_config;
+}
+void ScitosBase::getSonarConfig(const RangeData::Config*& sonar_config) {
+	sonar_config = sonar_config_;
 }
 
 
-void ScitosBase::publish_batteryState(float pVoltage, float pCurrent, int16_t pChargeState,
+void ScitosBase::publishBatteryState(float pVoltage, float pCurrent, int16_t pChargeState,
 		int16_t pRemainingTime, int16_t pChargerStatus) {
-	m_pVoltage = pVoltage;
-	m_pCurrent = pCurrent;
-	m_pChargeState = pChargeState;
-	m_pRemainingTime = pRemainingTime;
-	m_pChargerStatus = pChargerStatus;
+	battery_voltage_ = pVoltage;
+	battery_current_ = pCurrent;
+	battery_charge_state_ = pChargeState;
+	battery_remaining_time_ = pRemainingTime;
+	battery_charger_status_ = pChargerStatus;
 }
 
-void ScitosBase::get_batteryState(float& pVoltage, float& pCurrent, int16_t& pChargeState,
+void ScitosBase::getBatteryState(float& pVoltage, float& pCurrent, int16_t& pChargeState,
 		int16_t& pRemainingTime, int16_t& pChargerStatus) {
-	pVoltage = m_pVoltage;
-	pCurrent = m_pCurrent;
-	pChargeState = m_pChargeState;
-	pRemainingTime = m_pRemainingTime;
-	pChargerStatus = m_pChargerStatus;
+	pVoltage = battery_voltage_;
+	pCurrent = battery_current_;
+	pChargeState = battery_charge_state_;
+	pRemainingTime = battery_remaining_time_;
+	pChargerStatus = battery_charger_status_;
 }
 
 
 
 ScitosBase::~ScitosBase() {
 	Error tErr;
-	if ((tErr = tBlackboard->stopBlackboard()) != OK)
+	if ((tErr = blackboard_->stopBlackboard()) != OK)
 		fprintf(stderr, "ERROR: Failed to stop the blackboard. Code: %s\n", getErrorString(tErr).c_str());
 
 	// Stop the robot.
-	if ((tErr = tRobot->stopClient()) != OK)
+	if ((tErr = robot_->stopClient()) != OK)
 		fprintf(stderr, "ERROR: Failed to stop the robot system. Code: %s\n", getErrorString(tErr).c_str());
 
 	// Destroy the robot
-	if ((tErr = tRobot->destroyClient()) != OK)
+	if ((tErr = robot_->destroyClient()) != OK)
 		fprintf(stderr, "ERROR: Failed to destroy the robot system. Code: %s\n", getErrorString(tErr).c_str());
 
 	// Delete the application object
-	delete tApp;
+	delete app_;
 }
 
 
@@ -269,43 +269,43 @@ ScitosBase::~ScitosBase() {
 
 template<>
 void ScitosBase::setFeature<bool>(std::string name, bool value) {
-	tRobot->setFeatureBool(name, value);
+	robot_->setFeatureBool(name, value);
 }
 template<>
 void ScitosBase::setFeature<int>(std::string name, int value) {
-	tRobot->setFeatureInt(name, value);
+	robot_->setFeatureInt(name, value);
 }
 template<>
 void ScitosBase::setFeature<float>(std::string name, float value) {
-	tRobot->setFeatureFloat(name, value);
+	robot_->setFeatureFloat(name, value);
 }
 template<>
 void ScitosBase::setFeature<std::string>(std::string name, std::string value) {
-	tRobot->setFeatureString(name, value);
+	robot_->setFeatureString(name, value);
 }
 
 
 template<>
 bool ScitosBase::getFeature(std::string name) {
 	bool value;
-	tRobot->getFeatureBool(name, value);
+	robot_->getFeatureBool(name, value);
 	return value;
 }
 template<>
 int ScitosBase::getFeature(std::string name) {
 	int value;
-	tRobot->getFeatureInt(name, value);
+	robot_->getFeatureInt(name, value);
 	return value;
 }
 template<>
 float ScitosBase::getFeature(std::string name) {
 	float value;
-	tRobot->getFeatureFloat(name, value);
+	robot_->getFeatureFloat(name, value);
 	return value;
 }
 template<>
 std::string ScitosBase::getFeature(std::string name) {
 	MString value;
-	tRobot->getFeatureString(name, value);
+	robot_->getFeatureString(name, value);
 	return value;
 }

@@ -60,31 +60,33 @@ class TrajectoryExecuter : private boost::noncopyable {
 public:
 
 	TrajectoryExecuter(ros::NodeHandle& nh_, std::string action_server_name) :
-		as_(nh_, action_server_name, boost::bind(&TrajectoryExecuter::executeCB, this, _1), false),
+		as_(nh_, action_server_name, boost::bind(&TrajectoryExecuter::trajectoryActionCallback, this, _1), false),
 		action_name_(action_server_name)
 	{
-		run = false;
-		arm = NULL;
+		run_ = false;
+		arm_ = NULL;
 	}
 
 	void init(ros::NodeHandle& n, PowerCube* p_arm, std::map<std::string, unsigned int>& nmap) {
 
-		arm = p_arm;
-		nameToNumber = nmap;
+		arm_ = p_arm;
+		joints_name_to_number_map_ = nmap;
 
-		state_publisher = n.advertise<pr2_controllers_msgs::JointTrajectoryControllerState>("state", 1);
+		state_publisher_ = n.advertise<pr2_controllers_msgs::JointTrajectoryControllerState>("state", 1);
 
 		std::map<std::string, unsigned int>::iterator it;
-		for (it = nameToNumber.begin(); it != nameToNumber.end(); ++it) {
-			state_msg.joint_names.push_back((*it).first );
+		for (it = joints_name_to_number_map_.begin(); it != joints_name_to_number_map_.end(); ++it) {
+			state_msg_.joint_names.push_back(it->first);
 		}
-		state_msg.desired.positions.resize(nameToNumber.size());
-		state_msg.desired.velocities.resize(nameToNumber.size());
-		state_msg.desired.accelerations.resize(nameToNumber.size());
-		state_msg.actual.positions.resize(nameToNumber.size());
-		state_msg.actual.velocities.resize(nameToNumber.size());
-		state_msg.error.positions.resize(nameToNumber.size());
-		state_msg.error.velocities.resize(nameToNumber.size());
+
+		int num_of_joints = joints_name_to_number_map_.size();
+		state_msg_.desired.positions.resize(num_of_joints);
+		state_msg_.desired.velocities.resize(num_of_joints);
+		state_msg_.desired.accelerations.resize(num_of_joints);
+		state_msg_.actual.positions.resize(num_of_joints);
+		state_msg_.actual.velocities.resize(num_of_joints);
+		state_msg_.error.positions.resize(num_of_joints);
+		state_msg_.error.velocities.resize(num_of_joints);
 
 		as_.start();
 	}
@@ -92,50 +94,50 @@ public:
 	void main() {
 		while (true) {
 			{
-				boost::unique_lock<boost::mutex> lock(mut);
-				waiting = true;
+				boost::unique_lock<boost::mutex> lock(mut_);
+				waiting_ = true;
 				bool gotit = false;
-				while (!run){
+				while (!run_){
 					try {
 						boost::this_thread::interruption_point();
-						gotit = cond.timed_wait(lock, boost::posix_time::milliseconds(100));
+						gotit = cond_.timed_wait(lock, boost::posix_time::milliseconds(100));
 					}
 					catch(const boost::thread_interrupted&) {
 						ROS_INFO("Trajectory thread was interrupted and returns, stopping the arm.");
-						arm->pc_normal_stop();
+						arm_->normalStopAll();
 						return;
 					}
 					if (! gotit) {
 						//Let's make people happy by publishing a state message
-						for (unsigned int joint_i = 0; joint_i<nameToNumber.size(); ++joint_i) {
+						for (unsigned int joint_i = 0; joint_i<joints_name_to_number_map_.size(); ++joint_i) {
 							//fill in the message
-							state_msg.desired = state_msg.actual;
-							state_msg.actual.positions[joint_i] = RAD_TO_DEG(arm->mManipulator.getModules().at(joint_i).status_pos);
-							state_msg.actual.velocities[joint_i] = 0;
-							state_msg.actual.time_from_start = ros::Duration(0);
+							state_msg_.desired = state_msg_.actual;
+							state_msg_.actual.positions[joint_i] = RAD_TO_DEG(arm_->manipulator_.getModules().at(joint_i).status_pos);
+							state_msg_.actual.velocities[joint_i] = 0;
+							state_msg_.actual.time_from_start = ros::Duration(0);
 						}
 
 						//finally publish the state message
-						state_msg.header.stamp = ros::Time::now();
-						state_publisher.publish(state_msg);
+						state_msg_.header.stamp = ros::Time::now();
+						state_publisher_.publish(state_msg_);
 					}
 
 				}
 			}
 			//I hope the mutex is unlocked now
 			{
-				boost::unique_lock<boost::mutex> lock(mut);
-				waiting = false;
+				boost::unique_lock<boost::mutex> lock(mut_);
+				waiting_ = false;
 			}
 
 			ROS_INFO("Trajectory thread is starting its job");
-			follow_trajectory();
-			arm->pc_normal_stop();
+			followTrajectory();
+			arm_->normalStopAll();
 
 			{
 				//Self deactivate
-				boost::unique_lock<boost::mutex> lock(mut);
-				run = false;
+				boost::unique_lock<boost::mutex> lock(mut_);
+				run_ = false;
 			}
 			ROS_INFO("Trajectory thread has finished its job");
 		}
@@ -144,80 +146,80 @@ public:
 
 	void start(const trajectory_msgs::JointTrajectory& newtraj) {
 		{
-			boost::unique_lock<boost::mutex> lock(mut);
-			if (run) {
+			boost::unique_lock<boost::mutex> lock(mut_);
+			if (run_) {
 				ROS_WARN("You need to stop a trajectory before issuing a new command. Ignoring the new command");
 				return;
 			}
 
-			traj = newtraj;
-			run = true;
+			traj_ = newtraj;
+			run_ = true;
 		}
 		ROS_INFO("Waking up the thread");
-		cond.notify_one();
+		cond_.notify_one();
 	}
 
 	void stop() {
-		boost::unique_lock<boost::mutex> lock(mut);
-		run = false;
+		boost::unique_lock<boost::mutex> lock(mut_);
+		run_ = false;
 	}
 
-	bool running() {
-		boost::unique_lock<boost::mutex> lock(mut);
-		return run;
+	bool isRunning() {
+		boost::unique_lock<boost::mutex> lock(mut_);
+		return run_;
 	}
 
-	bool is_waiting() {
-		boost::unique_lock<boost::mutex> lock(mut);
-		return waiting;
+	bool isWaiting() {
+		boost::unique_lock<boost::mutex> lock(mut_);
+		return waiting_;
 	}
 
 private:
 
 	/* At this time only velocity values are followed. */
-	void follow_trajectory() {
+	void followTrajectory() {
 		//I am not entirely sure that this code actually looks like real-time
 		ros::Time trajStartTime = ros::Time::now();
-		for (unsigned int step = 0; step < traj.points.size(); ++step) {
-			trajectory_msgs::JointTrajectoryPoint& point = traj.points[step];
+		for (unsigned int step = 0; step < traj_.points.size(); ++step) {
+			trajectory_msgs::JointTrajectoryPoint& point = traj_.points[step];
 
 			ROS_INFO_STREAM("Trajectory thread executing step "<<step);
 			//now apply speed to each joint
-			for (unsigned int joint_i = 0; joint_i < traj.joint_names.size(); ++joint_i) {
+			for (unsigned int joint_i = 0; joint_i < traj_.joint_names.size(); ++joint_i) {
 
-				unsigned int id = nameToNumber[traj.joint_names[joint_i]];
+				unsigned int id = joints_name_to_number_map_[traj_.joint_names[joint_i]];
 				float velRad = point.velocities[joint_i];
 				float velDeg = RAD_TO_DEG(velRad);
 
 				ROS_INFO_STREAM("Moving module "<<id<<" with "<<velRad<<" rad/s = "<<velDeg<<" deg/s");
 #if SCHUNK_NOT_AMTEC != 0
-				arm->pc_move_velocity(id, velDeg);
+				arm_->moveVelocity(id, velDeg);
 #else
-				arm->pc_move_velocity(id, velRad); // amtec protocol already in rad
+				arm_->moveVelocity(id, velRad); // amtec protocol already in rad
 #endif
 
 				//fill in the message
-				state_msg.desired = state_msg.actual;
+				state_msg_.desired = state_msg_.actual;
 #if SCHUNK_NOT_AMTEC != 0
-				state_msg.actual.positions[joint_i] = DEG_TO_RAD(arm->mManipulator.getModules().at(joint_i).status_pos);
+				state_msg_.actual.positions[joint_i] = DEG_TO_RAD(arm_->manipulator_.getModules().at(joint_i).status_pos);
 #else
-				state_msg.actual.positions[joint_i] = arm->mManipulator.getModules().at(joint_i).status_pos;
+				state_msg_.actual.positions[joint_i] = arm_->manipulator_.getModules().at(joint_i).status_pos;
 #endif
-				state_msg.actual.velocities[joint_i] = point.velocities[joint_i];
-				state_msg.actual.time_from_start = point.time_from_start;
+				state_msg_.actual.velocities[joint_i] = point.velocities[joint_i];
+				state_msg_.actual.time_from_start = point.time_from_start;
 			}
 
 			//finally publish the state message
-			state_msg.header.stamp = ros::Time::now();
-			state_publisher.publish(state_msg);
+			state_msg_.header.stamp = ros::Time::now();
+			state_publisher_.publish(state_msg_);
 
 
 			//wait for the right time and check if it has to die
 			while (ros::Time::now() < trajStartTime + point.time_from_start) {
 				; // <- Now things are really dirty
 				{ //This is tricky... a block as the only body of a loop!
-					boost::unique_lock<boost::mutex> lock(mut);
-					if (!run) {
+					boost::unique_lock<boost::mutex> lock(mut_);
+					if (!run_) {
 						ROS_INFO("Trajectory thread has been commanded to stop");
 						return;
 					}
@@ -227,15 +229,15 @@ private:
 	}
 
 private:
-	PowerCube* arm;
-	std::map<std::string, unsigned int> nameToNumber;
-	trajectory_msgs::JointTrajectory traj;
-	bool run;
-	bool waiting;
-	boost::condition_variable cond;
-	boost::mutex mut;
-	pr2_controllers_msgs::JointTrajectoryControllerState state_msg;
-	ros::Publisher state_publisher;
+	PowerCube* arm_;
+	std::map<std::string, unsigned int> joints_name_to_number_map_;
+	trajectory_msgs::JointTrajectory traj_;
+	bool run_;
+	bool waiting_;
+	boost::condition_variable cond_;
+	boost::mutex mut_;
+	pr2_controllers_msgs::JointTrajectoryControllerState state_msg_;
+	ros::Publisher state_publisher_;
 
 
 	// from action tutorial
@@ -248,7 +250,7 @@ protected:
 	control_msgs::FollowJointTrajectoryResult result_;
 
 public:
-	void executeCB(const control_msgs::FollowJointTrajectoryGoalConstPtr& goal)
+	void trajectoryActionCallback(const control_msgs::FollowJointTrajectoryGoalConstPtr& goal)
 	{
 		bool success = true;
 		ros::Time trajStartTime = ros::Time::now();
@@ -277,7 +279,7 @@ public:
 				// set the action state to preempted
 				as_.setPreempted();
 				success = false;
-				arm->pc_normal_stop();
+				arm_->normalStopAll();
 				break;
 			}
 
@@ -291,7 +293,7 @@ public:
 			// for each joint in step...
 			for (unsigned int joint_i = 0; joint_i < traj.joint_names.size(); ++joint_i) {
 
-				int id = nameToNumber[traj.joint_names[joint_i]];
+				int id = joints_name_to_number_map_[traj.joint_names[joint_i]];
 
 				float accRad = trajStep.accelerations[joint_i];
 				float velRad = trajStep.velocities[joint_i];
@@ -337,28 +339,28 @@ public:
 
 #if SCHUNK_NOT_AMTEC != 0
 				// TODO schunk option of trajectory action callback
-//				arm->pc_move_velocity(id, velDeg);
+//				arm_->moveVelocity(id, velDeg);
 #else
-				arm->pc_set_target_acceleration(id, accRad);
-				arm->pc_set_target_velocity(id, velRad);
-				arm->pc_move_position(id, posRad);
-//				arm->pc_move_velocity(id, velRad);	TODO choose this if the velocity and time are calculated precisely
+				arm_->setTargetAcceleration(id, accRad);
+				arm_->setTargetVelocity(id, velRad);
+				arm_->movePosition(id, posRad);
+//				arm_->moveVelocity(id, velRad);	TODO choose this if the velocity and time are calculated precisely
 
 //				if(step_i == steps-1) {
 //					ROS_INFO("LAST STEP, moving to position instead of with velocity.");
-//					arm->pc_move_position(id, posRad);
+//					arm_->movePosition(id, posRad);
 //				}
 //				else {
 ////					ROS_INFO("Velocity move.");
-//					arm->pc_move_velocity(id, velRad);
+//					arm_->moveVelocity(id, velRad);
 //				}
 #endif
 //				}
 
 				// fill the joint individual feedback part
-				feedback_.actual.positions[id] = arm->mManipulator.getModules().at(id).status_pos;
-				feedback_.actual.velocities[id] = arm->mManipulator.getModules().at(id).status_vel;
-//				feedback_.actual.accelerations[id] = arm->mManipulator.getModules().at(id).status_acc / max_acceleration?; TODO
+				feedback_.actual.positions[id] = arm_->manipulator_.getModules().at(id).status_pos;
+				feedback_.actual.velocities[id] = arm_->manipulator_.getModules().at(id).status_vel;
+//				feedback_.actual.accelerations[id] = arm_->manipulator_.getModules().at(id).status_acc / max_acceleration?; TODO
 			}
 
 			// publish the feedback
@@ -379,13 +381,13 @@ public:
 				for (unsigned int joint_i = 0; joint_i < traj.joint_names.size(); ++joint_i) {
 					uint8_t moving, brake, foo;
 					float foofl;
-					arm->getModuleStatus(joint_i, foo, moving, foo, foo, foo, brake, foo, foo, foo, foofl);
+					arm_->getModuleStatus(joint_i, foo, moving, foo, foo, foo, brake, foo, foo, foo, foofl);
 //					if(moving) {
 					if(!brake) {
 						all_joints_stopped = false;
 						break;
 					}
-//					if(arm->mManipulator.getModules().at(joint_i).status_vel == 0)
+//					if(arm_->manipulator_.getModules().at(joint_i).status_vel == 0)
 //						all_joints_stopped = false;
 				}
 			} while (!all_joints_stopped);
@@ -402,72 +404,72 @@ public:
 
 class SchunkServer : private boost::noncopyable {
 private:
-	PowerCube m_powerCube;
-	sensor_msgs::JointState m_currentJointState;
-	metralabs_ros::SchunkStatus m_schunkStatus;
-	ros::NodeHandle m_node;
-	std::vector<boost::shared_ptr<urdf::Joint> > m_joints;
-	urdf::Model m_armModel;	// A parsing of the model description
-	ros::Publisher m_currentJointStatePublisher;
-	ros::Publisher m_schunkStatusPublisher;
-	std::map<std::string, unsigned int> m_nameToNumber;
+	PowerCube power_cube_;
+	sensor_msgs::JointState current_JointState_;
+	metralabs_ros::SchunkStatus current_SchunkStatus_;
+	ros::NodeHandle node_handle_;
+	std::vector<boost::shared_ptr<urdf::Joint> > joints_list_;
+	urdf::Model arm_model_;	// A parsing of the model description
+	ros::Publisher current_JointState_publisher_;
+	ros::Publisher current_SchunkStatus_publisher_;
+	std::map<std::string, unsigned int> joints_name_to_number_map_;
 
-	TrajectoryExecuter m_executer;
-	boost::thread m_executerThread;
+	TrajectoryExecuter trajectory_executer_;
+	boost::thread trajectory_executer_thread_;
 
 
-	ros::Subscriber targetJointStateSubscriberPositionControl;
-	ros::Subscriber targetJointStateSubscriberVelocityControl;
+	ros::Subscriber move_all_position_subscriber_;
+	ros::Subscriber move_all_velocity_subscriber_;
 
-	ros::Subscriber emergency;
-	ros::Subscriber stop;
-	ros::Subscriber firstRef;
-	ros::Subscriber ack;
-	ros::Subscriber ackAll;
-	ros::Subscriber ref;
-	ros::Subscriber refAll;
-	ros::Subscriber current;
-	ros::Subscriber currentsMaxAll;
-	ros::Subscriber movePosition;
-	ros::Subscriber moveVelocity;
-	ros::Subscriber targetVelocity;
-	ros::Subscriber targetAcceleration;
+	ros::Subscriber emergency_subscriber_;
+	ros::Subscriber stop_subscriber_;
+	ros::Subscriber first_ref_subscriber_;
+	ros::Subscriber ack_subscriber_;
+	ros::Subscriber ack_all_subscriber_;
+	ros::Subscriber ref_subscriber_;
+	ros::Subscriber ref_all_subscriber_;
+	ros::Subscriber target_current_subscriber_;
+	ros::Subscriber target_currents_max_all_subscriber_;
+	ros::Subscriber move_position_subscriber_;
+	ros::Subscriber move_velocity_subscriber_;
+	ros::Subscriber target_velocity_subscriber_;
+	ros::Subscriber target_acceleration_subscriber_;
 
-	ros::Subscriber command;
+	ros::Subscriber command_subscriber_;
 
 
 public:
 
 	SchunkServer(ros::NodeHandle &node, std::string action_server_name) :
-		m_node(node),
-		m_executer(node, action_server_name)
+		node_handle_(node),
+		trajectory_executer_(node, action_server_name)
 	{
 		init();
 	}
 
 	void init() {
 		// Initialise the arm model parser and find out what non-fixed joints are present
-		m_armModel.initParam("robot_description");
+		arm_model_.initParam("robot_description");
 		std::map<std::string, boost::shared_ptr<urdf::Joint> >::const_iterator mapElement;
-		for (mapElement = m_armModel.joints_.begin(); mapElement != m_armModel.joints_.end(); ++mapElement) {
+		for (mapElement = arm_model_.joints_.begin(); mapElement != arm_model_.joints_.end(); ++mapElement) {
 			boost::shared_ptr<urdf::Joint> joint = mapElement->second;
 			ROS_DEBUG_STREAM("Joint: Name="<<joint->name<<" MimicPtr="<<joint->mimic);
 			if (joint->type != urdf::Joint::FIXED &&
 					joint->mimic == 0)	// ignore virtual joints mimicking a physical one
-				m_joints.push_back(joint);
+				joints_list_.push_back(joint);
 		}
-		ROS_INFO("URDF specifies %d non-fixed non-mimicking joints.", m_joints.size());
+		ROS_INFO("URDF specifies %d non-fixed non-mimicking joints.", joints_list_.size());
 
 		// Initialise the powercube
-		m_powerCube.init();
+		power_cube_.init();
 
 		// Check if reinitialisation is needed
-		while(m_powerCube.modulesNum != m_joints.size()) {
-			ROS_WARN("Reinitialising robot arm... found %d joints but need %d", m_powerCube.modulesNum, m_joints.size());
-			m_powerCube.~PowerCube();
+		while(power_cube_.modules_count_ != joints_list_.size()) {
+			ROS_WARN("Reinitialising robot arm... found %d joints but need %d", power_cube_.modules_count_, joints_list_.size());
+			power_cube_.~PowerCube();
 			ros::WallDuration(1).sleep(); // let arm start up
-			new (&m_powerCube) PowerCube;
-			m_powerCube.init();
+			new (&power_cube_) PowerCube;
+			power_cube_.init();
 		}
 
 		// Check that the required modules are present.
@@ -475,28 +477,28 @@ public:
 
 		// Set up the joint state publisher with the joint names
 		// This assumes that the joints are ordered on the robot in the same order as the URDF!!!
-		m_currentJointState.name.resize(m_joints.size());
-		m_currentJointState.position.resize(m_joints.size());
-		m_currentJointState.velocity.resize(m_joints.size());
-		for (unsigned int i = 0; i < m_joints.size(); ++i) {
-			m_currentJointState.name[i] = m_joints[i]->name;
-			m_nameToNumber[m_joints[i]->name] = i;
-			ROS_INFO("%d is mapping to %s", i, m_joints[i]->name.c_str());
+		current_JointState_.name.resize(joints_list_.size());
+		current_JointState_.position.resize(joints_list_.size());
+		current_JointState_.velocity.resize(joints_list_.size());
+		for (unsigned int i = 0; i < joints_list_.size(); ++i) {
+			current_JointState_.name[i] = joints_list_[i]->name;
+			joints_name_to_number_map_[joints_list_[i]->name] = i;
+			ROS_INFO("%d is mapping to %s", i, joints_list_[i]->name.c_str());
 		}
-		m_currentJointStatePublisher = m_node.advertise<sensor_msgs::JointState>("/schunk/position/joint_states", 1);
+		current_JointState_publisher_ = node_handle_.advertise<sensor_msgs::JointState>("/schunk/position/joint_states", 1);
 
 		// Set up the schunk status publisher
-		m_schunkStatusPublisher = m_node.advertise<metralabs_ros::SchunkStatus>("/schunk/status", 1);
-		for (uint i = 0; i < m_joints.size(); ++i) {
+		current_SchunkStatus_publisher_ = node_handle_.advertise<metralabs_ros::SchunkStatus>("/schunk/status", 1);
+		for (uint i = 0; i < joints_list_.size(); ++i) {
 			metralabs_ros::SchunkJointStatus status;
-			status.jointName = m_joints[i]->name;
-			m_schunkStatus.joints.push_back(status);
+			status.jointName = joints_list_[i]->name;
+			current_SchunkStatus_.joints.push_back(status);
 		}
 
-		m_executer.init(m_node, &m_powerCube, m_nameToNumber);
+		trajectory_executer_.init(node_handle_, &power_cube_, joints_name_to_number_map_);
 
 		ROS_INFO("Starting the trajectory executer thread");
-		m_executerThread = boost::thread(boost::bind(&TrajectoryExecuter::main, &m_executer));
+		trajectory_executer_thread_ = boost::thread(boost::bind(&TrajectoryExecuter::main, &trajectory_executer_));
 
 
 		/*
@@ -508,25 +510,25 @@ public:
 
 		ROS_INFO("Subscribing schunk topics...");
 
-		targetJointStateSubscriberPositionControl = m_node.subscribe("/schunk/target_pc/joint_states", 1, &SchunkServer::cb_targetJointStatePositionControl, this);
-		targetJointStateSubscriberVelocityControl = m_node.subscribe("/schunk/target_vc/joint_states", 1, &SchunkServer::cb_targetJointStateVelocityControl, this);
+		move_all_position_subscriber_ = node_handle_.subscribe("/schunk/target_pc/joint_states", 1, &SchunkServer::cb_moveAllPosition, this);
+		move_all_velocity_subscriber_ = node_handle_.subscribe("/schunk/target_vc/joint_states", 1, &SchunkServer::cb_moveAllVelocity, this);
 
 		// those topics which must be received multiple times (for each joint) got a 10 for their message buffer
-		emergency = m_node.subscribe("/emergency", 1, &SchunkServer::cb_emergency, this);
-		stop = m_node.subscribe("/stop", 1, &SchunkServer::cb_stop, this);
-		firstRef = m_node.subscribe("/firstRef", 1, &SchunkServer::cb_firstRef, this);
-		ack = m_node.subscribe("/ack", 10, &SchunkServer::cb_ack, this);
-		ackAll = m_node.subscribe("/ackAll", 1, &SchunkServer::cb_ackAll, this);
-		ref = m_node.subscribe("/ref", 10, &SchunkServer::cb_ref, this);
-		refAll = m_node.subscribe("/refAll", 1, &SchunkServer::cb_refAll, this);
-		current = m_node.subscribe("/current", 10, &SchunkServer::cb_current, this);
-		currentsMaxAll = m_node.subscribe("/currentsMaxAll", 1, &SchunkServer::cb_currentsMaxAll, this);
-		movePosition = m_node.subscribe("/movePosition", 10, &SchunkServer::cb_movePosition, this);
-		moveVelocity = m_node.subscribe("/moveVelocity", 10, &SchunkServer::cb_moveVelocity, this);
-		targetVelocity = m_node.subscribe("/targetVelocity", 10, &SchunkServer::cb_targetVelocity, this);
-		targetAcceleration = m_node.subscribe("/targetAcceleration", 10, &SchunkServer::cb_targetAcceleration, this);
+		emergency_subscriber_ = node_handle_.subscribe("/emergency", 1, &SchunkServer::cb_emergency, this);
+		stop_subscriber_ = node_handle_.subscribe("/stop", 1, &SchunkServer::cb_stop, this);
+		first_ref_subscriber_ = node_handle_.subscribe("/firstRef", 1, &SchunkServer::cb_firstRef, this);
+		ack_subscriber_ = node_handle_.subscribe("/ack", 10, &SchunkServer::cb_ack, this);
+		ack_all_subscriber_ = node_handle_.subscribe("/ackAll", 1, &SchunkServer::cb_ackAll, this);
+		ref_subscriber_ = node_handle_.subscribe("/ref", 10, &SchunkServer::cb_ref, this);
+		ref_all_subscriber_ = node_handle_.subscribe("/refAll", 1, &SchunkServer::cb_refAll, this);
+		target_current_subscriber_ = node_handle_.subscribe("/current", 10, &SchunkServer::cb_targetCurrent, this);
+		target_currents_max_all_subscriber_ = node_handle_.subscribe("/currentsMaxAll", 1, &SchunkServer::cb_targetCurrentsMaxAll, this);
+		move_position_subscriber_ = node_handle_.subscribe("/movePosition", 10, &SchunkServer::cb_movePosition, this);
+		move_velocity_subscriber_ = node_handle_.subscribe("/moveVelocity", 10, &SchunkServer::cb_moveVelocity, this);
+		target_velocity_subscriber_ = node_handle_.subscribe("/targetVelocity", 10, &SchunkServer::cb_targetVelocity, this);
+		target_acceleration_subscriber_ = node_handle_.subscribe("/targetAcceleration", 10, &SchunkServer::cb_targetAcceleration, this);
 
-		command = m_node.subscribe("command", 1, &SchunkServer::cb_commandTrajectory, this);
+		command_subscriber_ = node_handle_.subscribe("command", 1, &SchunkServer::cb_commandTrajectory, this);
 
 
 		ROS_INFO("SchunkServer Ready");
@@ -534,108 +536,108 @@ public:
 	}
 
 	~SchunkServer() {
-		m_executer.stop();
-		m_executerThread.interrupt();
-		m_executerThread.join();
+		trajectory_executer_.stop();
+		trajectory_executer_thread_.interrupt();
+		trajectory_executer_thread_.join();
 	}
 
 	void cb_emergency(const std_msgs::Bool::ConstPtr& dummy) 	{
 		ROS_INFO("emergency");
-		m_powerCube.pc_emergency_stop();
+		power_cube_.emergencyStop();
 	}
 
 	void cb_stop(const std_msgs::Bool::ConstPtr& dummy) 	{
 		ROS_INFO("stop");
-		m_powerCube.pc_normal_stop();
+		power_cube_.normalStopAll();
 	}
 
 	void cb_firstRef(const std_msgs::Bool::ConstPtr& dummy) 	{
 		ROS_INFO("first ref");
-		m_powerCube.pc_first_ref();
+		power_cube_.firstRef();
 	}
 
 	void cb_ack(const std_msgs::Int8::ConstPtr& id) 	{
 		ROS_INFO("cb_ack: [%d]", id->data);
-		m_powerCube.pc_ack(id->data);
+		power_cube_.ack(id->data);
 	}
 
 	void cb_ackAll(const std_msgs::Bool::ConstPtr& dummy) 	{
 		ROS_INFO("cb_ackall");
-		m_powerCube.pc_ack();
+		power_cube_.ackAll();
 	}
 
 	void cb_ref(const std_msgs::Int8::ConstPtr& id)	{
 		ROS_INFO("cb_ref: [%d]", id->data);
-		m_powerCube.pc_ref(id->data);
+		power_cube_.ref(id->data);
 	}
 
 	void cb_refAll(const std_msgs::Bool::ConstPtr& dummy)	{
 		ROS_INFO("cb_refall");
-		m_powerCube.pc_ref();
+		power_cube_.refAll();
 	}
 
-	void cb_current(const metralabs_ros::idAndFloat::ConstPtr& data)	{
+	void cb_targetCurrent(const metralabs_ros::idAndFloat::ConstPtr& data)	{
 		ROS_INFO("cb_current: [%d, %f]", data->id, data->value);
-		m_powerCube.pc_set_current(data->id, data->value);
+		power_cube_.setTargetCurrent(data->id, data->value);
 	}
 
-	void cb_currentsMaxAll(const std_msgs::Bool::ConstPtr& i)	{
+	void cb_targetCurrentsMaxAll(const std_msgs::Bool::ConstPtr& dummy)	{
 		ROS_INFO("cb_currentsMax");
-		m_powerCube.pc_set_currents_max();
+		power_cube_.setCurrentsToMax();
 	}
 
 	void cb_movePosition(const metralabs_ros::idAndFloat::ConstPtr& data)	{
 		ROS_INFO("cb_movePosition: [%d, %f]", data->id, data->value);
-		m_powerCube.pc_move_position(data->id, data->value);
+		power_cube_.movePosition(data->id, data->value);
 	}
 
 	void cb_moveVelocity(const metralabs_ros::idAndFloat::ConstPtr& data)	{
 		ROS_INFO("cb_moveVelocity: [%d, %f]", data->id, data->value);
 		if (data->value == 0.0)
-			m_powerCube.pc_normal_stop(data->id);
+			power_cube_.normalStop(data->id);
 		else
-			m_powerCube.pc_move_velocity(data->id, data->value);
+			power_cube_.moveVelocity(data->id, data->value);
 	}
 
 	void cb_targetVelocity(const metralabs_ros::idAndFloat::ConstPtr& data)	{
 		ROS_INFO("cb_targetVelocity: [%d, %f]", data->id, data->value);
-		m_powerCube.pc_set_target_velocity(data->id, data->value);
+		power_cube_.setTargetVelocity(data->id, data->value);
 	}
 
 	void cb_targetAcceleration(const metralabs_ros::idAndFloat::ConstPtr& data)	{
 		ROS_INFO("cb_targetAcceleration: [%d, %f]", data->id, data->value);
-		m_powerCube.pc_set_target_acceleration(data->id, data->value);
+		power_cube_.setTargetAcceleration(data->id, data->value);
 	}
 
 
-	void publishCurrentJointState () {
-		m_currentJointState.header.stamp = ros::Time::now();
-		for (unsigned int i = 0; i < m_currentJointState.name.size(); ++i) {
+	void publishCurrentJointState() {
+		current_JointState_.header.stamp = ros::Time::now();
+		for (unsigned int i = 0; i < current_JointState_.name.size(); ++i) {
 #if SCHUNK_NOT_AMTEC != 0
-			SCHUNKMotionManipulator::ModuleConfig modCfg = m_powerCube.mManipulator.getModules().at(i);
-			m_currentJointState.position[i]=DEG_TO_RAD(modCfg.status_pos);
-			m_currentJointState.velocity[i]=DEG_TO_RAD(modCfg.status_vel);
+			SCHUNKMotionManipulator::ModuleConfig modCfg = m_powerCube.manipulator_.getModules().at(i);
+			current_JointState_.position[i]=DEG_TO_RAD(modCfg.status_pos);
+			current_JointState_.velocity[i]=DEG_TO_RAD(modCfg.status_vel);
 #else
-			AmtecManipulator::ModuleConfig modCfg = m_powerCube.mManipulator.getModules().at(i);
-			m_currentJointState.position[i]=modCfg.status_pos; // amtec protocol already in rad
-			m_currentJointState.velocity[i]=modCfg.status_vel;
+			AmtecManipulator::ModuleConfig modCfg = power_cube_.manipulator_.getModules().at(i);
+			current_JointState_.position[i]=modCfg.status_pos; // amtec protocol already in rad
+			current_JointState_.velocity[i]=modCfg.status_vel;
 #endif
 		}
-		m_currentJointStatePublisher.publish(m_currentJointState);
+		current_JointState_publisher_.publish(current_JointState_);
 	}
 
-	void publishSchunkStatus() {
+	void publishCurrentSchunkStatus() {
 		std::vector<metralabs_ros::SchunkJointStatus>::iterator it;
 		uint moduleNumber;
-		for (it = m_schunkStatus.joints.begin(); it != m_schunkStatus.joints.end(); ++it) {
-			moduleNumber = m_nameToNumber[it->jointName];
-			m_powerCube.getModuleStatus(moduleNumber, it->referenced, it->moving, it->progMode, it->warning,
+		for (it = current_SchunkStatus_.joints.begin(); it != current_SchunkStatus_.joints.end(); ++it) {
+			moduleNumber = joints_name_to_number_map_[it->jointName];
+			power_cube_.getModuleStatus(moduleNumber, it->referenced, it->moving, it->progMode, it->warning,
 					it->error, it->brake, it->moveEnd, it->posReached, it->errorCode, it->current);
 		}
-		m_schunkStatusPublisher.publish(m_schunkStatus);
+		current_SchunkStatus_publisher_.publish(current_SchunkStatus_);
 	}
 
-	void cb_targetJointStatePositionControl(const sensor_msgs::JointState::ConstPtr& data) {
+	void cb_moveAllPosition(const sensor_msgs::JointState::ConstPtr& data) {
 		// The "names" member says how many joints, the other members may be empty.
 		// Not all the joints have to be specified in the message
 		// and not all types must be filled
@@ -647,30 +649,30 @@ public:
 
 		for (uint i = 0; i < data.get()->name.size(); ++i) {
 			string joint_name = data.get()->name[i];
-			int joint_number = m_nameToNumber[joint_name];
+			int joint_number = joints_name_to_number_map_[joint_name];
 			ROS_INFO_STREAM("cb_PositionControl: joint "<<joint_name<<" (#"<<joint_number<<")");
 
-			m_powerCube.pc_set_currents_max();
+			power_cube_.setCurrentsToMax();
 			if (data.get()->position.size()!=0) {
 				double pos = data.get()->position[i] / rad_to_degrees_needed;
 				ROS_INFO_STREAM(" to position "<<pos);
-				m_powerCube.pc_move_position(joint_number, pos);
+				power_cube_.movePosition(joint_number, pos);
 			}
 			if (data.get()->velocity.size()!=0) {
 				double vel = data.get()->velocity[i] / rad_to_degrees_needed;
 				ROS_INFO_STREAM(" with velocity "<<vel);
-				m_powerCube.pc_set_target_velocity(joint_number, vel);
+				power_cube_.setTargetVelocity(joint_number, vel);
 			}
 			if (data.get()->effort.size()!=0) {
 				double eff = data.get()->effort[i];
 				ROS_INFO_STREAM(" with effort "<<eff);
-				m_powerCube.pc_set_current(joint_number, eff);
+				power_cube_.setTargetCurrent(joint_number, eff);
 			}
 
 		}
 	}
 
-	void cb_targetJointStateVelocityControl(const sensor_msgs::JointState::ConstPtr& data) {
+	void cb_moveAllVelocity(const sensor_msgs::JointState::ConstPtr& data) {
 #if SCHUNK_NOT_AMTEC != 0
 		float rad_to_degrees_needed = RAD_TO_DEG(1);
 #else
@@ -680,26 +682,26 @@ public:
 		// The "names" member says how many joints, the other members may be empty.
 		// Not all the joints have to be specified in the message
 		// and not all types must be filled
-//		m_powerCube.pc_ack();
+//		m_powerCube.ackAll();
 		for (uint i = 0; i < data.get()->name.size(); ++i) {
 			string joint_name = data.get()->name[i];
-			int joint_number = m_nameToNumber[joint_name];
+			int joint_number = joints_name_to_number_map_[joint_name];
 			ROS_INFO_STREAM("cb_VelocityControl: joint "<<joint_name<<" (#"<<joint_number<<")");
 
-//			m_powerCube.pc_set_currents_max();
+//			m_powerCube.setCurrentsToMax();
 
 			if (data.get()->velocity.size() != 0) {
 				double vel = data.get()->velocity[i] / rad_to_degrees_needed;
 				ROS_INFO_STREAM(" with velocity "<<vel);
 				if (vel == 0.0)
-					m_powerCube.pc_normal_stop(joint_number);
+					power_cube_.normalStop(joint_number);
 				else
-					m_powerCube.pc_move_velocity(joint_number, vel);
+					power_cube_.moveVelocity(joint_number, vel);
 			}
 			if (data.get()->effort.size()!=0) {
 				double eff = data.get()->effort[i];
 				ROS_INFO_STREAM(" with effort "<<eff);
-				m_powerCube.pc_set_current(joint_number, eff);
+				power_cube_.setTargetCurrent(joint_number, eff);
 			}
 
 		}
@@ -707,51 +709,51 @@ public:
 
 	void cb_commandTrajectory(const trajectory_msgs::JointTrajectory traj) {
 		ROS_INFO("Schunk Server: received a new trajectory");
-		m_executer.stop();
-		while (! m_executer.is_waiting() ) {
+		trajectory_executer_.stop();
+		while (! trajectory_executer_.isWaiting() ) {
 			ROS_INFO("Waiting for the controller to be ready..");
 		}
-		m_executer.start(traj);
+		trajectory_executer_.start(traj);
 	}
 
 };
 
 
 
-class RosScitosBase : private boost::noncopyable {
+class ROSScitosBase : private boost::noncopyable {
 
 public:
-	RosScitosBase(ros::NodeHandle& n, ScitosBase& base) :
-		m_node(n),
-		m_base(base),
-		remote_control_next_timeout(),
+	ROSScitosBase(ros::NodeHandle& n, ScitosBase& base) :
+		node_handle_(n),
+		scitos_base_(base),
+		remote_control_next_timeout_(),
 		DEAD_REMOTE_CONTROL_TIMEOUT(0.9),
-		activate_remote_control_timeout(true)
+		activate_remote_control_timeout_(true)
 	{
-		m_odomPublisher = m_node.advertise<nav_msgs::Odometry> ("odom", 50);
-		m_sonarPublisher = m_node.advertise<sensor_msgs::Range> ("sonar", 50);
-		m_commandSubscriber = m_node.subscribe("cmd_vel", 1, &RosScitosBase::driveCommandCallback, this);
-		m_bumperResetSubscriber = m_node.subscribe("bumper_reset", 1, &RosScitosBase::bumperResetCallback, this);
+		odom_publisher_ = node_handle_.advertise<nav_msgs::Odometry> ("odom", 50);
+		sonar_publisher_ = node_handle_.advertise<sensor_msgs::Range> ("sonar", 50);
+		cmd_vel_subscriber_ = node_handle_.subscribe("cmd_vel", 1, &ROSScitosBase::driveCommandCallback, this);
+		bumper_reset_subscriber_ = node_handle_.subscribe("bumper_reset", 1, &ROSScitosBase::bumperResetCallback, this);
 	}
 	
 	void loop() {
 
 		/// dead remote control check
 
-		if(activate_remote_control_timeout && ros::Time::now() > remote_control_next_timeout) {
+		if(activate_remote_control_timeout_ && ros::Time::now() > remote_control_next_timeout_) {
 			ROS_INFO("remote control timeout after nonzero command, stopping robot");
-			m_base.set_velocity(0, 0);
-			activate_remote_control_timeout = false;
+			scitos_base_.setVelocity(0, 0);
+			activate_remote_control_timeout_ = false;
 		}
 
 
 		// forward velocity data to inner ScitosBase loop
-		m_base.loop();
+		scitos_base_.loop();
 
 
 		/// The odometry position and velocities of the robot
 		double x, y, th, vx, vth;
-		m_base.get_odometry(x,y,th,vx,vth);
+		scitos_base_.getOdometry(x, y, th, vx, vth);
 
 		ros::Time currentTime = ros::Time::now();
 		// since all odometry is 6DOF we'll need a quaternion created from yaw
@@ -769,7 +771,7 @@ public:
 		odom_tf.transform.rotation = odom_quat;
 
 		// send the transform
-		m_tf_broadcaster.sendTransform(odom_tf);
+		tf_broadcaster_.sendTransform(odom_tf);
 
 		/// odometry data
 		nav_msgs::Odometry odom_msg;
@@ -787,16 +789,16 @@ public:
 		odom_msg.twist.twist.angular.z = vth;
 
 		// publish the message
-		m_odomPublisher.publish(odom_msg);
+		odom_publisher_.publish(odom_msg);
 
 
 		/// enable or disable sonar if someone or no one is listening
 		static bool sonar_is_requested = false;
 		bool sonar_had_been_requested = sonar_is_requested;
 
-		sonar_is_requested = m_sonarPublisher.getNumSubscribers() != 0;
+		sonar_is_requested = sonar_publisher_.getNumSubscribers() != 0;
 		if(sonar_is_requested != sonar_had_been_requested) {
-			m_base.setFeature(FEATURE_SONAR, sonar_is_requested);
+			scitos_base_.setFeature(FEATURE_SONAR, sonar_is_requested);
 		}
 
 		if(sonar_is_requested) {
@@ -804,7 +806,7 @@ public:
 
 			// load config once
 			if (sonarConfig == NULL) {
-				m_base.get_sonar_config(sonarConfig);		// TODO what if nonzero rubbish is read?
+				scitos_base_.getSonarConfig(sonarConfig);    // TODO what if nonzero rubbish is read?
 //				std::cout << "sonarConfig was NULL and now we read: " << sonarConfig << std::endl;
 			}
 			// if config is loaded, proceed..
@@ -835,7 +837,7 @@ public:
 					for (int i = 0; it != sonarTransforms.end(); ++it) {
 						char targetframe[20];
 						sprintf(targetframe, "/sonar/sonar_%02d", i++);
-						m_tf_broadcaster.sendTransform(
+						tf_broadcaster_.sendTransform(
 								tf::StampedTransform(*it, ros::Time::now(), "/base_link", targetframe)
 							);
 					}
@@ -846,7 +848,7 @@ public:
 				/// sonar data
 
 				std::vector<RangeData::Measurement> measurements;
-				m_base.get_sonar(measurements);
+				scitos_base_.getSonar(measurements);
 
 				sensor_msgs::Range sonar_msg;
 				sonar_msg.header.stamp = currentTime;
@@ -880,10 +882,10 @@ public:
 							sonar_msg.range = 0;
 					}
 					sonar_msg.header.frame_id = nextTargetframe;
-					m_sonarPublisher.publish(sonar_msg);
+					sonar_publisher_.publish(sonar_msg);
 
 					// resend also one transform (the according, why not)
-					m_tf_broadcaster.sendTransform( tf::StampedTransform(
+					tf_broadcaster_.sendTransform( tf::StampedTransform(
 							sonarTransforms.at(nextSonarToSend), ros::Time::now(), "/base_link", nextTargetframe ) );
 
 					++nextSonarToSend %= measurements.size();
@@ -901,7 +903,7 @@ public:
 	//				sonar.range = itM->range+1;
 	//
 	//				//publish the message
-	//				m_sonarPublisher.publish(sonar);
+	//				sonar_publisher_.publish(sonar);
 	//			}
 
 			} // if sonar config loaded
@@ -909,19 +911,19 @@ public:
 
 	}
 
-	void loop_diagnostics(ros::Publisher &diagnosticsPublisher) {
-		float pVoltage;
-		float pCurrent;
-		int16_t pChargeState;
-		int16_t pRemainingTime;
-		int16_t pChargerStatus;
-		m_base.get_batteryState(pVoltage, pCurrent, pChargeState, pRemainingTime, pChargerStatus);
+	void loopDiagnostics(ros::Publisher& diagnostics_publisher) {
+		float voltage;
+		float current;
+		int16_t charge_state;
+		int16_t remaining_time;
+		int16_t charger_status;
+		scitos_base_.getBatteryState(voltage, current, charge_state, remaining_time, charger_status);
 
-		diagnostic_msgs::DiagnosticStatus batteryStatus;
-		batteryStatus.level = diagnostic_msgs::DiagnosticStatus::OK;
-		batteryStatus.name = "Battery";
-		batteryStatus.message = "undefined";
-		batteryStatus.hardware_id = "0a4fcec0-27ef-497a-93ba-db39808ec1af";
+		diagnostic_msgs::DiagnosticStatus battery_status;
+		battery_status.level = diagnostic_msgs::DiagnosticStatus::OK;
+		battery_status.name = "Battery";
+		battery_status.message = "undefined";
+		battery_status.hardware_id = "0a4fcec0-27ef-497a-93ba-db39808ec1af";
 
 // TODO do me parameters
 #define 	VOLTAGE_ERROR_LEVEL	23		// and below
@@ -930,62 +932,62 @@ public:
 #define 	VOLTAGE_FULL_LEVEL	28.8	// and above
 #define 	CHARGER_PLUGGED 	1
 
-		if(pVoltage < VOLTAGE_ERROR_LEVEL && pChargerStatus != CHARGER_PLUGGED)
-			batteryStatus.level = diagnostic_msgs::DiagnosticStatus::ERROR;
-		else if(pVoltage < VOLTAGE_WARN_LEVEL && pChargerStatus != CHARGER_PLUGGED)
-			batteryStatus.level = diagnostic_msgs::DiagnosticStatus::WARN;
+		if(voltage < VOLTAGE_ERROR_LEVEL && charger_status != CHARGER_PLUGGED)
+			battery_status.level = diagnostic_msgs::DiagnosticStatus::ERROR;
+		else if(voltage < VOLTAGE_WARN_LEVEL && charger_status != CHARGER_PLUGGED)
+			battery_status.level = diagnostic_msgs::DiagnosticStatus::WARN;
 
 		// build text message
-		batteryStatus.message = "High";
-		if(pVoltage < VOLTAGE_MID_LEVEL)
-			batteryStatus.message = "Mid";
-		if(pVoltage < VOLTAGE_WARN_LEVEL)
-			batteryStatus.message = "Low";
-		if(pVoltage < VOLTAGE_ERROR_LEVEL)
-			batteryStatus.message = "Depleted";
+		battery_status.message = "High";
+		if(voltage < VOLTAGE_MID_LEVEL)
+			battery_status.message = "Mid";
+		if(voltage < VOLTAGE_WARN_LEVEL)
+			battery_status.message = "Low";
+		if(voltage < VOLTAGE_ERROR_LEVEL)
+			battery_status.message = "Depleted";
 
-		batteryStatus.message += pChargerStatus == CHARGER_PLUGGED ? ", charging" : ", discharging";
+		battery_status.message += charger_status == CHARGER_PLUGGED ? ", charging" : ", discharging";
 
-		if(pVoltage >= VOLTAGE_FULL_LEVEL)
-			batteryStatus.message = "Fully charged";
+		if(voltage >= VOLTAGE_FULL_LEVEL)
+			battery_status.message = "Fully charged";
 
 
-		batteryStatus.values.resize(5);
+		battery_status.values.resize(5);
 		std::stringstream ss;
-		batteryStatus.values[0].key = "Voltage";
-		ss << pVoltage << " V";
-		batteryStatus.values[0].value = ss.str();
+		battery_status.values[0].key = "Voltage";
+		ss << voltage << " V";
+		battery_status.values[0].value = ss.str();
 
 		ss.str("");
-		batteryStatus.values[1].key = "Current";
-		ss << pCurrent << " A";
-		batteryStatus.values[1].value = ss.str();
+		battery_status.values[1].key = "Current";
+		ss << current << " A";
+		battery_status.values[1].value = ss.str();
 
 		ss.str("");
-		batteryStatus.values[2].key = "ChargeState";
-		ss << pChargeState << " %";
-		batteryStatus.values[2].value = ss.str();
+		battery_status.values[2].key = "ChargeState";
+		ss << charge_state << " %";
+		battery_status.values[2].value = ss.str();
 
 		ss.str("");
-		batteryStatus.values[3].key = "RemainingTime";
-		ss << pRemainingTime << " min";
-		batteryStatus.values[3].value = ss.str();
+		battery_status.values[3].key = "RemainingTime";
+		ss << remaining_time << " min";
+		battery_status.values[3].value = ss.str();
 
-		batteryStatus.values[4].key = "ChargerStatus";
-		batteryStatus.values[4].value = pChargerStatus == CHARGER_PLUGGED ? "plugged" : "unplugged";
+		battery_status.values[4].key = "ChargerStatus";
+		battery_status.values[4].value = charger_status == CHARGER_PLUGGED ? "plugged" : "unplugged";
 
 		/// combine and publish statii as array
-		diagnostic_msgs::DiagnosticArray diagArray;
-		diagArray.status.push_back(batteryStatus);
-		diagnosticsPublisher.publish(diagArray);
+		diagnostic_msgs::DiagnosticArray diag_array;
+		diag_array.status.push_back(battery_status);
+		diagnostics_publisher.publish(diag_array);
 	}
 
-	void dynamic_reconfigure_callback(metralabs_ros::ScitosG5Config &config, uint32_t level) {
+	void dynamicReconfigureCallback(metralabs_ros::ScitosG5Config& config, uint32_t level) {
 		// I wrote this macro because I couldn't find a way to read the configs parameters generically,
 		// and with this macro the actual feature name only has to be named once. Improvements welcome.
 		#define MAKRO_SET_FEATURE(NAME)	\
 			ROS_INFO("Setting feature %s to %s", #NAME, config.NAME?"True":"False"); \
-			m_base.setFeature(#NAME, config.NAME)
+			scitos_base_.setFeature(#NAME, config.NAME)
 
 		MAKRO_SET_FEATURE(EBC0_Enable5V);
 		MAKRO_SET_FEATURE(EBC0_Enable12V);
@@ -1000,15 +1002,15 @@ public:
 
 		ROS_DEBUG("Now reading again: (why is this rubbish?)");	// TODO fix me
 		metralabs_ros::ScitosG5Config config_read;
-		get_features(config_read);
+		getFeatures(config_read);
 	}
 
-	void get_features(metralabs_ros::ScitosG5Config &config) {
+	void getFeatures(metralabs_ros::ScitosG5Config& config) {
 		// I wrote this macro because I couldn't find a way to read the configs parameters generically,
 		// and with this macro the actual feature name only has to be named once. Improvements welcome.
 		#define MAKRO_GET_FEATURE(NAME)	\
 			ROS_DEBUG("Current hardware feature %s is %s", #NAME, config.NAME?"True":"False"); \
-			config.NAME = m_base.getFeature<typeof(config.NAME)>(std::string(#NAME))
+			config.NAME = scitos_base_.getFeature<typeof(config.NAME)>(std::string(#NAME))
 
 		MAKRO_GET_FEATURE(EBC0_Enable5V);
 		MAKRO_GET_FEATURE(EBC0_Enable12V);
@@ -1024,48 +1026,48 @@ public:
 
 private:
 	void driveCommandCallback(const geometry_msgs::TwistConstPtr& msg) {
-		m_base.set_velocity(msg->linear.x, msg->angular.z);
+		scitos_base_.setVelocity(msg->linear.x, msg->angular.z);
 		ROS_DEBUG("Received some speeds [%f %f]", msg->linear.x, msg->angular.z);
-		activate_remote_control_timeout = msg->linear.x != 0 || msg->angular.z != 0;
-		remote_control_next_timeout = ros::Time::now() + DEAD_REMOTE_CONTROL_TIMEOUT;
+		activate_remote_control_timeout_ = msg->linear.x != 0 || msg->angular.z != 0;
+		remote_control_next_timeout_ = ros::Time::now() + DEAD_REMOTE_CONTROL_TIMEOUT;
 	}
 
 	void bumperResetCallback(const std_msgs::EmptyConstPtr& dummy) {
 		ROS_INFO("Resetting bumper");
-		m_base.reset_bumper();
+		scitos_base_.resetBumper();
 	}
 
-	ros::NodeHandle& m_node;
-	ScitosBase& m_base;
-	tf::TransformBroadcaster m_tf_broadcaster;
-	ros::Publisher m_odomPublisher;
-	ros::Publisher m_sonarPublisher;
-	ros::Subscriber m_commandSubscriber;
-	ros::Subscriber m_bumperResetSubscriber;
+	ros::NodeHandle& node_handle_;
+	ScitosBase& scitos_base_;
+	tf::TransformBroadcaster tf_broadcaster_;
+	ros::Publisher odom_publisher_;
+	ros::Publisher sonar_publisher_;
+	ros::Subscriber cmd_vel_subscriber_;
+	ros::Subscriber bumper_reset_subscriber_;
 
-	ros::Time remote_control_next_timeout;
-	ros::Duration DEAD_REMOTE_CONTROL_TIMEOUT;
-	bool activate_remote_control_timeout;
+	ros::Time remote_control_next_timeout_;
+	const ros::Duration DEAD_REMOTE_CONTROL_TIMEOUT;
+	bool activate_remote_control_timeout_;
 };
 
 
-void diagnosticsPublishingLoop(ros::NodeHandle& n, RosScitosBase& ros_scitos,
+void diagnosticsPublishingLoop(ros::NodeHandle& n, ROSScitosBase& ros_scitos,
 		ros::Publisher &diagnosticsPublisher, ros::Rate loop_rate)
 {
 	while (n.ok()) {
-		ros_scitos.loop_diagnostics(diagnosticsPublisher);
+		ros_scitos.loopDiagnostics(diagnosticsPublisher);
 		// This will adjust as needed per iteration
 		loop_rate.sleep();
 	}
 }
 
-void dynamicReconfigureUpdaterLoop(ros::NodeHandle& n, RosScitosBase &ros_scitos,
+void dynamicReconfigureUpdaterLoop(ros::NodeHandle& n, ROSScitosBase &ros_scitos,
 		dynamic_reconfigure::Server<metralabs_ros::ScitosG5Config> &dynamicReconfigureServer,
 		boost::recursive_mutex &mutex, ros::Rate loop_rate)
 {
 	metralabs_ros::ScitosG5Config config;
 	while (n.ok()) {
-		ros_scitos.get_features(config);// update config to current hardware state
+		ros_scitos.getFeatures(config);// update config to current hardware state
 		boost::recursive_mutex::scoped_lock lock(mutex);
 		dynamicReconfigureServer.updateConfig(config);
 		lock.unlock();
@@ -1108,7 +1110,7 @@ int main(int argc, char **argv)
 	}
 
 	ROS_INFO("Starting ros base connector...");
-	RosScitosBase ros_scitos(n, base);
+	ROSScitosBase ros_scitos(n, base);
 
 
 	/// intialize diagnostics
@@ -1128,9 +1130,9 @@ int main(int argc, char **argv)
 
 	// update config to current hardware state
 	metralabs_ros::ScitosG5Config config;
-	ros_scitos.get_features(config);	// The first time the read config is totally wrong, maybe it's the previous state from rosparam
+	ros_scitos.getFeatures(config);	// The first time the read config is totally wrong, maybe it's the previous state from rosparam
 //	ROS_INFO_STREAM("This is what the first read gives... " << config.EBC1_Enable24V);
-//	ros_scitos.get_features(config);	// It's no timing issue as far as I tested it. 		TODO fix or proof as stable..
+//	ros_scitos.getFeatures(config);	// It's no timing issue as far as I tested it. 		TODO fix or proof as stable..
 	if(!disable_arm) {
 		config.EBC1_Enable24V = true;
 	}
@@ -1147,7 +1149,7 @@ int main(int argc, char **argv)
 
 	// init reconfigure callback
 	dynamic_reconfigure::Server<metralabs_ros::ScitosG5Config>::CallbackType f;
-	f = boost::bind(&RosScitosBase::dynamic_reconfigure_callback, &ros_scitos, _1, _2);
+	f = boost::bind(&ROSScitosBase::dynamicReconfigureCallback, &ros_scitos, _1, _2);
 	dynamicReconfigureServer.setCallback(f);
 
 
@@ -1166,7 +1168,7 @@ int main(int argc, char **argv)
 		ros::spinOnce();
 
 		schunkServer.publishCurrentJointState();
-		schunkServer.publishSchunkStatus();
+		schunkServer.publishCurrentSchunkStatus();
 
 		ros_scitos.loop();
 
