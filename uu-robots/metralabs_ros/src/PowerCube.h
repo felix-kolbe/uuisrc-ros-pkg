@@ -21,6 +21,13 @@ using namespace MetraLabs::robotic::hardware;
 
 class PowerCube : private boost::noncopyable {
 
+#if SCHUNK_NOT_AMTEC != 0
+typedef SCHUNKMotionManipulator ManipulatorType;
+#else
+typedef AmtecManipulator ManipulatorType;
+#endif
+
+
 public:
 
 	PowerCube();
@@ -50,12 +57,16 @@ public:
 			uint8_t& error, uint8_t& brake, uint8_t& moveEnd, uint8_t& posReached, uint8_t& errorCode, float& current);
 
 
-#if SCHUNK_NOT_AMTEC != 0
-	SCHUNKMotionManipulator manipulator_;
-#else
-	AmtecManipulator manipulator_;
-#endif
+	const ManipulatorType& getManipulator() const {
+		return manipulator_;
+	}
 
+	unsigned int getModulesCount() const {
+		return modules_count_;
+	}
+
+private:
+	ManipulatorType manipulator_;
 	unsigned int modules_count_;
 };
 #endif

@@ -112,7 +112,7 @@ public:
 						for (unsigned int joint_i = 0; joint_i<joints_name_to_number_map_.size(); ++joint_i) {
 							//fill in the message
 							state_msg_.desired = state_msg_.actual;
-							state_msg_.actual.positions[joint_i] = RAD_TO_DEG(arm_->manipulator_.getModules().at(joint_i).status_pos);
+							state_msg_.actual.positions[joint_i] = RAD_TO_DEG(arm_->getManipulator().getModules().at(joint_i).status_pos);
 							state_msg_.actual.velocities[joint_i] = 0;
 							state_msg_.actual.time_from_start = ros::Duration(0);
 						}
@@ -203,7 +203,7 @@ private:
 #if SCHUNK_NOT_AMTEC != 0
 				state_msg_.actual.positions[joint_i] = DEG_TO_RAD(arm_->manipulator_.getModules().at(joint_i).status_pos);
 #else
-				state_msg_.actual.positions[joint_i] = arm_->manipulator_.getModules().at(joint_i).status_pos;
+				state_msg_.actual.positions[joint_i] = arm_->getManipulator().getModules().at(joint_i).status_pos;
 #endif
 				state_msg_.actual.velocities[joint_i] = point.velocities[joint_i];
 				state_msg_.actual.time_from_start = point.time_from_start;
@@ -464,8 +464,8 @@ public:
 		power_cube_.init();
 
 		// Check if reinitialisation is needed
-		while(power_cube_.modules_count_ != joints_list_.size()) {
-			ROS_WARN("Reinitialising robot arm... found %d joints but need %d", power_cube_.modules_count_, joints_list_.size());
+		while(power_cube_.getModulesCount() != joints_list_.size()) {
+			ROS_WARN("Reinitialising robot arm... found %d joints but need %d", power_cube_.getModulesCount(), joints_list_.size());
 			power_cube_.~PowerCube();
 			ros::WallDuration(1).sleep(); // let arm start up
 			new (&power_cube_) PowerCube;
@@ -618,7 +618,7 @@ public:
 			current_JointState_.position[i]=DEG_TO_RAD(modCfg.status_pos);
 			current_JointState_.velocity[i]=DEG_TO_RAD(modCfg.status_vel);
 #else
-			AmtecManipulator::ModuleConfig modCfg = power_cube_.manipulator_.getModules().at(i);
+			AmtecManipulator::ModuleConfig modCfg = power_cube_.getManipulator().getModules().at(i);
 			current_JointState_.position[i]=modCfg.status_pos; // amtec protocol already in rad
 			current_JointState_.velocity[i]=modCfg.status_vel;
 #endif
