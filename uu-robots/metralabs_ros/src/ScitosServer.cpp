@@ -174,82 +174,7 @@ public:
 		return waiting_;
 	}
 
-private:
 
-	/* At this time only velocity values are followed. */
-	void followTrajectory() {
-		//I am not entirely sure that this code actually looks like real-time
-		ros::Time trajStartTime = ros::Time::now();
-		for (unsigned int step = 0; step < traj_.points.size(); ++step) {
-			trajectory_msgs::JointTrajectoryPoint& point = traj_.points[step];
-
-			ROS_INFO_STREAM("Trajectory thread executing step "<<step);
-			//now apply speed to each joint
-			for (unsigned int joint_i = 0; joint_i < traj_.joint_names.size(); ++joint_i) {
-
-				unsigned int id = joints_name_to_number_map_[traj_.joint_names[joint_i]];
-				float velRad = point.velocities[joint_i];
-				float velDeg = RAD_TO_DEG(velRad);
-
-				ROS_INFO_STREAM("Moving module "<<id<<" with "<<velRad<<" rad/s = "<<velDeg<<" deg/s");
-#if SCHUNK_NOT_AMTEC != 0
-				arm_->moveVelocity(id, velDeg);
-#else
-				arm_->moveVelocity(id, velRad); // amtec protocol already in rad
-#endif
-
-				//fill in the message
-				state_msg_.desired = state_msg_.actual;
-#if SCHUNK_NOT_AMTEC != 0
-				state_msg_.actual.positions[joint_i] = DEG_TO_RAD(arm_->manipulator_.getModules().at(joint_i).status_pos);
-#else
-				state_msg_.actual.positions[joint_i] = arm_->getManipulator().getModules().at(joint_i).status_pos;
-#endif
-				state_msg_.actual.velocities[joint_i] = point.velocities[joint_i];
-				state_msg_.actual.time_from_start = point.time_from_start;
-			}
-
-			//finally publish the state message
-			state_msg_.header.stamp = ros::Time::now();
-			state_publisher_.publish(state_msg_);
-
-
-			//wait for the right time and check if it has to die
-			while (ros::Time::now() < trajStartTime + point.time_from_start) {
-				; // <- Now things are really dirty
-				{ //This is tricky... a block as the only body of a loop!
-					boost::unique_lock<boost::mutex> lock(mut_);
-					if (!run_) {
-						ROS_INFO("Trajectory thread has been commanded to stop");
-						return;
-					}
-				}
-			}
-		}
-	}
-
-private:
-	PowerCube* arm_;
-	std::map<std::string, unsigned int> joints_name_to_number_map_;
-	trajectory_msgs::JointTrajectory traj_;
-	bool run_;
-	bool waiting_;
-	boost::condition_variable cond_;
-	boost::mutex mut_;
-	pr2_controllers_msgs::JointTrajectoryControllerState state_msg_;
-	ros::Publisher state_publisher_;
-
-
-	// from action tutorial
-protected:
-	ros::NodeHandle nh_;
-	actionlib::SimpleActionServer<control_msgs::FollowJointTrajectoryAction> as_;
-	std::string action_name_;
-	// create messages that are used to published feedback/result
-	control_msgs::FollowJointTrajectoryFeedback feedback_;
-	control_msgs::FollowJointTrajectoryResult result_;
-
-public:
 	void trajectoryActionCallback(const control_msgs::FollowJointTrajectoryGoalConstPtr& goal)
 	{
 		bool success = true;
@@ -320,11 +245,8 @@ public:
 										)
 
 //				velRad = SIGN_TOLERANT_CUT(velRad, TOO_SLOW);
-
 //				velRad = SIGN_TOLERANT_MAX(velRad, SLOWEST_REASONABLE_JOINT_SPEED);
-
 //				accRad = SIGN_TOLERANT_MAX(accRad, 0.43f);
-
 				accRad = 0.21;
 
 				if(step_i == steps-1) {
@@ -358,13 +280,13 @@ public:
 //				}
 
 				// fill the joint individual feedback part
-				feedback_.actual.positions[id] = arm_->manipulator_.getModules().at(id).status_pos;
-				feedback_.actual.velocities[id] = arm_->manipulator_.getModules().at(id).status_vel;
-//				feedback_.actual.accelerations[id] = arm_->manipulator_.getModules().at(id).status_acc / max_acceleration?; TODO
+				feedback_.actual.positions[id] = arm_->getManipulator().getModules().at(id).status_pos;
+				feedback_.actual.velocities[id] = arm_->getManipulator().getModules().at(id).status_vel;
+//				feedback_.actual.accelerations[id] = arm_->manipulator_.getModules().at(id).status_acc / max_acceleration?; TODO cannot know acceleration status
 			}
 
 			// publish the feedback
-			feedback_.header.stamp = ros::Time::now(); // TODO needed?
+			feedback_.header.stamp = ros::Time::now();
 			feedback_.actual.time_from_start = ros::Time::now() - trajStartTime;
 			as_.publishFeedback(feedback_);
 
@@ -399,47 +321,84 @@ public:
 		}
 	}
 
+
+	// from action tutorial
+protected:
+	ros::NodeHandle nh_;
+	actionlib::SimpleActionServer<control_msgs::FollowJointTrajectoryAction> as_;
+	std::string action_name_;
+	// create messages that are used to published feedback/result
+	control_msgs::FollowJointTrajectoryFeedback feedback_;
+	control_msgs::FollowJointTrajectoryResult result_;
+
+
+private:
+	/* At this time only velocity values are followed. */
+	void followTrajectory() {
+		//I am not entirely sure that this code actually looks like real-time
+		ros::Time trajStartTime = ros::Time::now();
+		for (unsigned int step = 0; step < traj_.points.size(); ++step) {
+			trajectory_msgs::JointTrajectoryPoint& point = traj_.points[step];
+
+			ROS_INFO_STREAM("Trajectory thread executing step "<<step);
+			//now apply speed to each joint
+			for (unsigned int joint_i = 0; joint_i < traj_.joint_names.size(); ++joint_i) {
+
+				unsigned int id = joints_name_to_number_map_[traj_.joint_names[joint_i]];
+				float velRad = point.velocities[joint_i];
+				float velDeg = RAD_TO_DEG(velRad);
+
+				ROS_INFO_STREAM("Moving module "<<id<<" with "<<velRad<<" rad/s = "<<velDeg<<" deg/s");
+#if SCHUNK_NOT_AMTEC != 0
+				arm_->moveVelocity(id, velDeg);
+#else
+				arm_->moveVelocity(id, velRad); // amtec protocol already in rad
+#endif
+
+				//fill in the message
+				state_msg_.desired = state_msg_.actual;
+#if SCHUNK_NOT_AMTEC != 0
+				state_msg_.actual.positions[joint_i] = DEG_TO_RAD(arm_->manipulator_.getModules().at(joint_i).status_pos);
+#else
+				state_msg_.actual.positions[joint_i] = arm_->getManipulator().getModules().at(joint_i).status_pos;
+#endif
+				state_msg_.actual.velocities[joint_i] = point.velocities[joint_i];
+				state_msg_.actual.time_from_start = point.time_from_start;
+			}
+
+			//finally publish the state message
+			state_msg_.header.stamp = ros::Time::now();
+			state_publisher_.publish(state_msg_);
+
+
+			//wait for the right time and check if it has to die
+			while (ros::Time::now() < trajStartTime + point.time_from_start) {
+				; // <- Now things are really dirty
+				{ //This is tricky... a block as the only body of a loop!
+					boost::unique_lock<boost::mutex> lock(mut_);
+					if (!run_) {
+						ROS_INFO("Trajectory thread has been commanded to stop");
+						return;
+					}
+				}
+			}
+		}
+	}
+
+	PowerCube* arm_;
+	std::map<std::string, unsigned int> joints_name_to_number_map_;
+	trajectory_msgs::JointTrajectory traj_;
+	bool run_;
+	bool waiting_;
+	boost::condition_variable cond_;
+	boost::mutex mut_;
+	pr2_controllers_msgs::JointTrajectoryControllerState state_msg_;
+	ros::Publisher state_publisher_;
 };
 
 
 class SchunkServer : private boost::noncopyable {
-private:
-	PowerCube power_cube_;
-	sensor_msgs::JointState current_JointState_;
-	metralabs_ros::SchunkStatus current_SchunkStatus_;
-	ros::NodeHandle node_handle_;
-	std::vector<boost::shared_ptr<urdf::Joint> > joints_list_;
-	urdf::Model arm_model_;	// A parsing of the model description
-	ros::Publisher current_JointState_publisher_;
-	ros::Publisher current_SchunkStatus_publisher_;
-	std::map<std::string, unsigned int> joints_name_to_number_map_;
-
-	TrajectoryExecuter trajectory_executer_;
-	boost::thread trajectory_executer_thread_;
-
-
-	ros::Subscriber move_all_position_subscriber_;
-	ros::Subscriber move_all_velocity_subscriber_;
-
-	ros::Subscriber emergency_subscriber_;
-	ros::Subscriber stop_subscriber_;
-	ros::Subscriber first_ref_subscriber_;
-	ros::Subscriber ack_subscriber_;
-	ros::Subscriber ack_all_subscriber_;
-	ros::Subscriber ref_subscriber_;
-	ros::Subscriber ref_all_subscriber_;
-	ros::Subscriber target_current_subscriber_;
-	ros::Subscriber target_currents_max_all_subscriber_;
-	ros::Subscriber move_position_subscriber_;
-	ros::Subscriber move_velocity_subscriber_;
-	ros::Subscriber target_velocity_subscriber_;
-	ros::Subscriber target_acceleration_subscriber_;
-
-	ros::Subscriber command_subscriber_;
-
-
 public:
-
 	SchunkServer(ros::NodeHandle &node, std::string action_server_name) :
 		node_handle_(node),
 		trajectory_executer_(node, action_server_name)
@@ -510,9 +469,6 @@ public:
 
 		ROS_INFO("Subscribing schunk topics...");
 
-		move_all_position_subscriber_ = node_handle_.subscribe("/schunk/target_pc/joint_states", 1, &SchunkServer::cb_moveAllPosition, this);
-		move_all_velocity_subscriber_ = node_handle_.subscribe("/schunk/target_vc/joint_states", 1, &SchunkServer::cb_moveAllVelocity, this);
-
 		// those topics which must be received multiple times (for each joint) got a 10 for their message buffer
 		emergency_subscriber_ = node_handle_.subscribe("/emergency", 1, &SchunkServer::cb_emergency, this);
 		stop_subscriber_ = node_handle_.subscribe("/stop", 1, &SchunkServer::cb_stop, this);
@@ -528,6 +484,8 @@ public:
 		target_velocity_subscriber_ = node_handle_.subscribe("/targetVelocity", 10, &SchunkServer::cb_targetVelocity, this);
 		target_acceleration_subscriber_ = node_handle_.subscribe("/targetAcceleration", 10, &SchunkServer::cb_targetAcceleration, this);
 
+		move_all_position_subscriber_ = node_handle_.subscribe("/schunk/target_pc/joint_states", 1, &SchunkServer::cb_moveAllPosition, this);
+		move_all_velocity_subscriber_ = node_handle_.subscribe("/schunk/target_vc/joint_states", 1, &SchunkServer::cb_moveAllVelocity, this);
 		command_subscriber_ = node_handle_.subscribe("command", 1, &SchunkServer::cb_commandTrajectory, this);
 
 
@@ -716,6 +674,38 @@ public:
 		trajectory_executer_.start(traj);
 	}
 
+private:
+	ros::NodeHandle node_handle_;
+	PowerCube power_cube_;
+	urdf::Model arm_model_;	// A parsing of the model description
+	std::vector<boost::shared_ptr<urdf::Joint> > joints_list_;
+	std::map<std::string, unsigned int> joints_name_to_number_map_;
+
+	sensor_msgs::JointState current_JointState_;
+	metralabs_ros::SchunkStatus current_SchunkStatus_;
+	ros::Publisher current_JointState_publisher_;
+	ros::Publisher current_SchunkStatus_publisher_;
+
+	TrajectoryExecuter trajectory_executer_;
+	boost::thread trajectory_executer_thread_;
+
+	ros::Subscriber emergency_subscriber_;
+	ros::Subscriber stop_subscriber_;
+	ros::Subscriber first_ref_subscriber_;
+	ros::Subscriber ack_subscriber_;
+	ros::Subscriber ack_all_subscriber_;
+	ros::Subscriber ref_subscriber_;
+	ros::Subscriber ref_all_subscriber_;
+	ros::Subscriber target_current_subscriber_;
+	ros::Subscriber target_currents_max_all_subscriber_;
+	ros::Subscriber move_position_subscriber_;
+	ros::Subscriber move_velocity_subscriber_;
+	ros::Subscriber target_velocity_subscriber_;
+	ros::Subscriber target_acceleration_subscriber_;
+
+	ros::Subscriber move_all_position_subscriber_;
+	ros::Subscriber move_all_velocity_subscriber_;
+	ros::Subscriber command_subscriber_;
 };
 
 
