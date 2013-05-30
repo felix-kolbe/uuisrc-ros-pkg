@@ -15,28 +15,28 @@ using namespace MetraLabs::robotic::robot;
 
 class ScitosBase : private boost::noncopyable {
 
-	public:
+public:
 	ScitosBase(const char*, int pArgc, char* pArgv[]);
 	~ScitosBase();
 
-	void publish_odometry(double x, double y, double theta, double v, double w);
-	void get_odometry(double& x, double& y, double& theta, double& v, double& w);
+	void publishOdometry(double x, double y, double theta, double v, double w);
+	void getOdometry(double& x, double& y, double& theta, double& v, double& w);
 
-	void publish_sonar(std::vector<RangeData::Measurement> measurements);
-	void get_sonar(std::vector<RangeData::Measurement>& measurements);
-	void publish_sonar_config(const RangeData::Config* sonarConfig);
-	void get_sonar_config(const RangeData::Config*& sonarConfig);
+	void publishSonar(std::vector<RangeData::Measurement> measurements);
+	void getSonar(std::vector<RangeData::Measurement>& measurements);
+	void publishSonarConfig(const RangeData::Config* sonarConfig);
+	void getSonarConfig(const RangeData::Config*& sonarConfig);
 
-	void publish_batteryState(float pVoltage, float pCurrent, int16_t pChargeState,
+	void publishBatteryState(float pVoltage, float pCurrent, int16_t pChargeState,
 			int16_t pRemainingTime, int16_t pChargerStatus);
-	void get_batteryState(float& pVoltage, float& pCurrent, int16_t& pChargeState,
+	void getBatteryState(float& pVoltage, float& pCurrent, int16_t& pChargeState,
 			int16_t& pRemainingTime, int16_t& pChargerStatus);
 
-	void set_velocity(double v, double w);
+	void setVelocity(double v, double w);
 	void loop();
 
-	void reset_bumper() {
-		tBumperResetCmd->set(0, true, true, MetraLabs::base::MTime::now());
+	void resetBumper() {
+		bumper_reset_cmd_->set(0, true, true, MetraLabs::base::MTime::now());
 	}
 
 	template<typename FeatureType>
@@ -46,10 +46,10 @@ class ScitosBase : private boost::noncopyable {
 	FeatureType getFeature(std::string name);
 
 
-	private:
+private:
 	class OdometryCallbackHandler : public BlackboardDataUpdateCallback
 	{
-		public:
+	public:
 		OdometryCallbackHandler(ScitosBase* base) : BlackboardDataUpdateCallback() {
 			m_base = base;
 		}
@@ -58,7 +58,7 @@ class ScitosBase : private boost::noncopyable {
 			m_base = base;
 		}
 
-		private:
+	private:
 		// Implementation of BlackboardDataUpdateCallback
 		void dataChanged(const BlackboardData* pData) {
 			const BlackboardDataOdometry* tOdometryData = dynamic_cast<const BlackboardDataOdometry*>(pData);
@@ -69,7 +69,7 @@ class ScitosBase : private boost::noncopyable {
 				float tMileage;
 
 				tOdometryData->getData(tPose, tVelocity, tMileage);
-				m_base->publish_odometry(tPose.getX(), tPose.getY(), tPose.getPhi(),
+				m_base->publishOdometry(tPose.getX(), tPose.getY(), tPose.getPhi(),
 							tVelocity.getVelocityTranslational(),
 							tVelocity.getVelocityRotational());
 
@@ -79,10 +79,10 @@ class ScitosBase : private boost::noncopyable {
 		ScitosBase* m_base;
 	};
 
-	private:
+private:
 	class SonarCallbackHandler : public BlackboardDataUpdateCallback
 	{
-		public:
+	public:
 		SonarCallbackHandler(ScitosBase* base) : BlackboardDataUpdateCallback() {
 			m_base = base;
 		}
@@ -91,7 +91,7 @@ class ScitosBase : private boost::noncopyable {
 			m_base = base;
 		}
 
-		private:
+	private:
 		// Implementation of BlackboardDataUpdateCallback
 		void dataChanged(const BlackboardData* pData) {
 			const BlackboardDataRange* tSonarData = dynamic_cast<const BlackboardDataRange*>(pData);
@@ -101,12 +101,12 @@ class ScitosBase : private boost::noncopyable {
 
 				const std::vector<RangeData::Measurement> tRangeMeasurements = tRangeData;
 
-//				const RangeData::Config* mSonarConfig = tSonarData->getConfig();
+//				const RangeData::Config* sonar_config_ = sonar_data_->getConfig();
 //
-//				RangeData::Config* mSonarConfig = tSonarData->getConfig();
+//				RangeData::Config* sonar_config_ = sonar_data_->getConfig();
 
-				m_base->publish_sonar(tRangeMeasurements);
-				m_base->publish_sonar_config(tSonarData->getConfig());
+				m_base->publishSonar(tRangeMeasurements);
+				m_base->publishSonarConfig(tSonarData->getConfig());
 			}
 		}
 
@@ -114,10 +114,10 @@ class ScitosBase : private boost::noncopyable {
 	};
 
 
-	private:
+private:
 	class BatteryStateCallbackHandler : public BlackboardDataUpdateCallback
 	{
-		public:
+	public:
 		BatteryStateCallbackHandler(ScitosBase* base) : BlackboardDataUpdateCallback() {
 			m_base = base;
 		}
@@ -126,14 +126,14 @@ class ScitosBase : private boost::noncopyable {
 			m_base = base;
 		}
 
-		private:
+	private:
 		// Implementation of BlackboardDataUpdateCallback
 		void dataChanged(const BlackboardData* pData) {
 			const BlackboardDataBatteryState* tBatteryStateData = dynamic_cast<const BlackboardDataBatteryState*>(pData);
 			if (tBatteryStateData != NULL) {
 				MTime tTime;
 
-				m_base->publish_batteryState(
+				m_base->publishBatteryState(
 						tBatteryStateData->getVoltage(),
 						tBatteryStateData->getCurrent(),
 						tBatteryStateData->getChargeState(),
@@ -146,40 +146,39 @@ class ScitosBase : private boost::noncopyable {
 		ScitosBase* m_base;
 	};
 
-	private:
-	Application* tApp;
-	ClassFactory* tClassFactory;
-	Blackboard* tBlackboard;
-	Robot* tRobot;
+private:
+	Application* app_;
+	ClassFactory* class_factory_;
+	Blackboard* blackboard_;
+	Robot* robot_;
 
-	BlackboardDataOdometry* tOdometryData;
-	BlackboardDataVelocity* tVelocityData;
-	BlackboardDataRange* tSonarData;
-	BlackboardDataBatteryState* tBatteryStateData;
-	BlackboardDataUInt8* tBumperResetCmd;
+	BlackboardDataOdometry* odometry_data_;
+	BlackboardDataVelocity* velocity_data_;
+	BlackboardDataRange* sonar_data_;
+	BlackboardDataBatteryState* battery_state_data_;
+	BlackboardDataUInt8* bumper_reset_cmd_;
 
-	OdometryCallbackHandler tOdometryHandler;
-	SonarCallbackHandler tSonarHandler;
-	BatteryStateCallbackHandler tBatteryStateHandler;
+	OdometryCallbackHandler odometry_handler_;
+	SonarCallbackHandler sonar_handler_;
+	BatteryStateCallbackHandler battery_state_handler_;
 
-	double m_x;
-	double m_y;
-	double m_theta;
-	double m_v;
-	double m_w;
+	double odom_x_;
+	double odom_y_;
+	double odom_theta_;
+	double odom_v_;
+	double odom_w_;
 
-	double m_command_v;
-	double m_command_w;
+	double command_v_;
+	double command_w_;
 
-	std::vector<RangeData::Measurement> mRangeMeasurements;
-	const RangeData::Config* mSonarConfig;
+	std::vector<RangeData::Measurement> range_measurements_;
+	const RangeData::Config* sonar_config_;
 
-	float m_pVoltage;
-	float m_pCurrent;
-	int16_t m_pChargeState;
-	int16_t m_pRemainingTime;
-	int16_t m_pChargerStatus;
-
+	float battery_voltage_;
+	float battery_current_;
+	int16_t battery_charge_state_;
+	int16_t battery_remaining_time_;
+	int16_t battery_charger_status_;
 
 };
 
