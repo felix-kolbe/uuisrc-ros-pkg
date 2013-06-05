@@ -1,13 +1,7 @@
 #include "ScitosBase.h"
 #include <iostream>
 
-ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
-	odometry_handler_(this),
-	sonar_handler_(this),
-	battery_state_handler_(this),
-	bumper_data_handler_(this)
-{
-
+ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) {
 	command_v_ = 0;
 	command_w_ = 0;
 	odom_x_ = 0;
@@ -41,14 +35,14 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 		exit(-1);
 	}
 
-	// Get the class factory from the application.
+	// Get the class factory from the application
 	class_factory_ = app_->getClassFactory();
 	if (class_factory_ == NULL) {
 		fprintf(stderr, "FATAL: Cannot get the ClassFactory!\n");
 		exit(-1);
 	}
 
-	// Load some parameters for the robot SCITOS-G5.
+	// Load some parameters for the robot SCITOS-G5
 	ParameterNode tRobotCfg("RobotCfg");
 	if ((tErr = tRobotCfg.readFromFile(config_file)) != OK) {
 		fprintf(stderr, "FATAL: Can't read parameter file. Code: %s\n", getErrorString(tErr).c_str());
@@ -65,9 +59,9 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 	}
 
 	///////////////////////////////////////////////////////////////////////////
-	// Robot creation and start-up
+	// Robot creation
 
-	// Create the robot interface for SCITOS-G5.
+	// Create the robot interface for SCITOS-G5
 	robot_ = createInstance<Robot>(class_factory_,
 			"b07fb034-83c1-446c-b2df-0dd6aa46eef6");
 	if (robot_ == NULL) {
@@ -101,17 +95,9 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 	}
 
 	///////////////////////////////////////////////////////////////////////////
-	// Blackboard activation
+	// Blackboard data: register listeners
 
-	// Start the blackboard.
-	if ((tErr = blackboard_->startBlackboard()) != OK) {
-		fprintf(stderr, "FATAL: Failed to start the blackboard. Code: %s\n", getErrorString(tErr).c_str());
-		exit(-1);
-	}
-
-	///////////////////////////////////////////////////////////////////////////
-	// Odometry callback registration
-
+	// Odometry
 	odometry_data_ = NULL;
 	tErr = getDataFromBlackboard<BlackboardDataOdometry>(blackboard_,
 			"MyRobot.Odometry", odometry_data_);
@@ -119,28 +105,20 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 		fprintf(stderr, "FATAL: Failed to get the odometry data from the blackboard! Code: %s\n", getErrorString(tErr).c_str());
 		exit(-1);
 	}
+	odometry_data_->addCallback(this);
 
-	odometry_data_->addCallback(&odometry_handler_);
-
-	///////////////////////////////////////////////////////////////////////////
-	// Sonar callback registration
-
+	// Sonar
 	sonar_data_ = NULL;
 	tErr = getDataFromBlackboard<BlackboardDataRange>(blackboard_,
 			"MyRobot.Sonar", sonar_data_);
 	if (tErr != OK) {
 		fprintf(stderr, "FATAL: Failed to get the Sonar data from the blackboard! Is it specified in the XML config? Code: %s\n", getErrorString(tErr).c_str());
 //		exit(-1);  no, let the robot start wihtout sonar, even if it wasn't specified in the XML config.
+	} else {
+		sonar_data_->addCallback(this);
 	}
-	else
-		sonar_data_->addCallback(&sonar_handler_);
 
-	//"RangeFinder.Sonar.Data": class BlackboardDataRange (UUID: fa0b925f-d394-4efd-b8ff-8386442d6234)
-
-
-	///////////////////////////////////////////////////////////////////////////
-	// Battery callback registration
-
+	// Battery
 	battery_state_data_ = NULL;
 	tErr = getDataFromBlackboard<BlackboardDataBatteryState>(blackboard_,
 			"MyRobot.BatteryState", battery_state_data_);
@@ -148,13 +126,9 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 		fprintf(stderr, "FATAL: Failed to get the battery state data from the blackboard! Code: %s\n", getErrorString(tErr).c_str());
 		exit(-1);
 	}
+	battery_state_data_->addCallback(this);
 
-	battery_state_data_->addCallback(&battery_state_handler_);
-
-
-	///////////////////////////////////////////////////////////////////////////
-	// Bumper callback registration
-
+	// Bumper
 	bumper_data_ = NULL;
 	tErr = getDataFromBlackboard<BlackboardDataBumper>(blackboard_,
 			"MyRobot.Bumper", bumper_data_);
@@ -162,13 +136,12 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 		fprintf(stderr, "FATAL: Failed to get the bumper data from the blackboard! Code: %s\n", getErrorString(tErr).c_str());
 		exit(-1);
 	}
-
-	bumper_data_->addCallback(&bumper_data_handler_);
-
+	bumper_data_->addCallback(this);
 
 	///////////////////////////////////////////////////////////////////////////
-	// BumperResetCmd data registration
+	// Blackboard data: register publishers
 
+	// Bumper reset command
 	bumper_reset_cmd_ = NULL;
 	tErr = getDataFromBlackboard<BlackboardDataUInt8>(blackboard_,
 			"MyRobot.BumperResetCmd", bumper_reset_cmd_);
@@ -177,32 +150,38 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 		exit(-1);
 	}
 
-
+	// Velocity command
+	velocity_cmd_ = NULL;
+	tErr = getDataFromBlackboard<BlackboardDataVelocity>(blackboard_,
+			"MyRobot.VelocityCmd", velocity_cmd_);
+	if (tErr != OK) {
+		fprintf(stderr, "FATAL: Failed to get the velocity command from the blackboard! Code: %s\n", getErrorString(tErr).c_str());
+		exit(-1);
+	}
 
 	///////////////////////////////////////////////////////////////////////////
+	// Activation
 
-	// Start the robot.
+	// Start the blackboard
+	if ((tErr = blackboard_->startBlackboard()) != OK) {
+		fprintf(stderr, "FATAL: Failed to start the blackboard. Code: %s\n", getErrorString(tErr).c_str());
+		exit(-1);
+	}
+
+	///////////////////////////////////////////////////////////////////////////
+	// Start the robot
 	if ((tErr = robot_->startClient()) != OK) {
 		fprintf(stderr, "FATAL: Failed to start the robot system. Code: %s\n", getErrorString(tErr).c_str());
 		exit(-1);
 	}
-
-	velocity_data_ = NULL;
-	tErr = getDataFromBlackboard<BlackboardDataVelocity>(blackboard_, 
-			"MyRobot.VelocityCmd", velocity_data_);
-	if (tErr != OK) {
-		fprintf(stderr, "FATAL: Failed to get the velocity data from the blackboard! Code: %s\n", getErrorString(tErr).c_str());
-		exit(-1);
-	}
-
 }
 
 
 void ScitosBase::loop() {
-	velocity_data_->writeLock();
-	velocity_data_->setVelocity(command_v_, command_w_);
-	velocity_data_->writeUnlock(MTime::now());
-	velocity_data_->setModified();
+	velocity_cmd_->writeLock();
+	velocity_cmd_->setVelocity(command_v_, command_w_);
+	velocity_cmd_->writeUnlock(MTime::now());
+	velocity_cmd_->setModified();
 }
 
 void ScitosBase::setVelocity(double v, double w) {
