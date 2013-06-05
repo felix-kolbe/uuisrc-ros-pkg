@@ -4,7 +4,8 @@
 ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 	odometry_handler_(this),
 	sonar_handler_(this),
-	battery_state_handler_(this)
+	battery_state_handler_(this),
+	bumper_data_handler_(this)
 {
 
 	command_v_ = 0;
@@ -152,10 +153,23 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 
 
 	///////////////////////////////////////////////////////////////////////////
+	// Bumper callback registration
+
+	bumper_data_ = NULL;
+	tErr = getDataFromBlackboard<BlackboardDataBumper>(blackboard_,
+			"MyRobot.Bumper", bumper_data_);
+	if (tErr != OK) {
+		fprintf(stderr, "FATAL: Failed to get the bumper data from the blackboard! Code: %s\n", getErrorString(tErr).c_str());
+		exit(-1);
+	}
+
+	bumper_data_->addCallback(&bumper_data_handler_);
+
+
+	///////////////////////////////////////////////////////////////////////////
 	// BumperResetCmd data registration
 
 	bumper_reset_cmd_ = NULL;
-
 	tErr = getDataFromBlackboard<BlackboardDataUInt8>(blackboard_,
 			"MyRobot.BumperResetCmd", bumper_reset_cmd_);
 	if (tErr != OK) {
@@ -185,28 +199,30 @@ ScitosBase::ScitosBase(const char* config_file, int pArgc, char* pArgv[]) :
 
 
 void ScitosBase::loop() {
-    velocity_data_->setVelocity(command_v_, command_w_);
-    velocity_data_->setModified();
+	velocity_data_->writeLock();
+	velocity_data_->setVelocity(command_v_, command_w_);
+	velocity_data_->writeUnlock(MTime::now());
+	velocity_data_->setModified();
 }
 
 void ScitosBase::setVelocity(double v, double w) {
-    command_v_ = v;
-    command_w_ = w;
+	command_v_ = v;
+	command_w_ = w;
 }
 
 void ScitosBase::publishOdometry(double x, double y, double theta, double v, double w) {
-    odom_x_ = x;
-    odom_y_ = y;
-    odom_theta_ = theta;
-    odom_v_ = v;
-    odom_w_ = w;
+	odom_x_ = x;
+	odom_y_ = y;
+	odom_theta_ = theta;
+	odom_v_ = v;
+	odom_w_ = w;
 }
 void ScitosBase::getOdometry(double& x, double& y, double& theta, double& v, double& w) {
-    x = odom_x_;
-    y = odom_y_;
-    theta = odom_theta_;
-    v = odom_v_;
-    w = odom_w_;
+	x = odom_x_;
+	y = odom_y_;
+	theta = odom_theta_;
+	v = odom_v_;
+	w = odom_w_;
 }
 
 void ScitosBase::publishSonar(std::vector<RangeData::Measurement> measurements) {
@@ -232,7 +248,6 @@ void ScitosBase::publishBatteryState(float pVoltage, float pCurrent, int16_t pCh
 	battery_remaining_time_ = pRemainingTime;
 	battery_charger_status_ = pChargerStatus;
 }
-
 void ScitosBase::getBatteryState(float& pVoltage, float& pCurrent, int16_t& pChargeState,
 		int16_t& pRemainingTime, int16_t& pChargerStatus) {
 	pVoltage = battery_voltage_;
@@ -242,6 +257,14 @@ void ScitosBase::getBatteryState(float& pVoltage, float& pCurrent, int16_t& pCha
 	pChargerStatus = battery_charger_status_;
 }
 
+void ScitosBase::publishBumperState(bool pBumperPressed, bool pMotorStop) {
+	bumper_pressed_ = pBumperPressed;
+	motor_stop_ = pMotorStop;
+}
+void ScitosBase::getBumperState(bool& pBumperPressed, bool& pMotorStop) {
+	pBumperPressed = bumper_pressed_;
+	pMotorStop = motor_stop_;
+}
 
 
 ScitosBase::~ScitosBase() {
