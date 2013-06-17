@@ -20,6 +20,7 @@
 #include <metralabs_ros/movePosition.h>
 #include <metralabs_ros/idAndFloat.h>
 #include <metralabs_ros/SchunkStatus.h>
+#include <metralabs_ros/ScitosG5Bumper.h>
 
 #include <diagnostic_msgs/DiagnosticStatus.h>
 #include <diagnostic_msgs/DiagnosticArray.h>
@@ -64,6 +65,7 @@ public:
 		action_name_(action_server_name)
 	{
 		run_ = false;
+		waiting_ = false;
 		arm_ = NULL;
 	}
 
@@ -98,6 +100,9 @@ public:
 				waiting_ = true;
 				bool gotit = false;
 				while (!run_){
+					if(!nh_.ok()) {
+						return;
+					}
 					try {
 						boost::this_thread::interruption_point();
 						gotit = cond_.timed_wait(lock, boost::posix_time::milliseconds(100));
@@ -720,8 +725,10 @@ public:
 		DEAD_REMOTE_CONTROL_TIMEOUT(0.9),
 		activate_remote_control_timeout_(true)
 	{
-		odom_publisher_ = node_handle_.advertise<nav_msgs::Odometry> ("odom", 50);
-		sonar_publisher_ = node_handle_.advertise<sensor_msgs::Range> ("sonar", 50);
+		odom_publisher_ = node_handle_.advertise<nav_msgs::Odometry>("odom", 20);
+		sonar_publisher_ = node_handle_.advertise<sensor_msgs::Range>("sonar", 50);
+		bumper_publisher_ = node_handle_.advertise<metralabs_ros::ScitosG5Bumper>("bumper", 20);
+
 		cmd_vel_subscriber_ = node_handle_.subscribe("cmd_vel", 1, &ROSScitosBase::driveCommandCallback, this);
 		bumper_reset_subscriber_ = node_handle_.subscribe("bumper_reset", 1, &ROSScitosBase::bumperResetCallback, this);
 	}
@@ -744,14 +751,14 @@ public:
 		/// The odometry position and velocities of the robot
 		double x, y, th, vx, vth;
 		scitos_base_.getOdometry(x, y, th, vx, vth);
+		ros::Time odom_time = ros::Time::now();
 
-		ros::Time currentTime = ros::Time::now();
 		// since all odometry is 6DOF we'll need a quaternion created from yaw
 		geometry_msgs::Quaternion odom_quat = tf::createQuaternionMsgFromYaw(th);
 
 		/// odometry tf
 		geometry_msgs::TransformStamped odom_tf;
-		odom_tf.header.stamp = currentTime;
+		odom_tf.header.stamp = odom_time;
 		odom_tf.header.frame_id = "/odom";
 		odom_tf.child_frame_id = "/base_link";
 
@@ -765,7 +772,7 @@ public:
 
 		/// odometry data
 		nav_msgs::Odometry odom_msg;
-		odom_msg.header.stamp = currentTime;
+		odom_msg.header.stamp = odom_time;
 		odom_msg.header.frame_id = "/odom";
 		odom_msg.child_frame_id = "/base_link";
 
@@ -781,6 +788,21 @@ public:
 		// publish the message
 		odom_publisher_.publish(odom_msg);
 
+
+		/// bumper data
+
+		bool bumper_pressed, motor_stop;
+		scitos_base_.getBumperState(bumper_pressed, motor_stop);
+
+		metralabs_ros::ScitosG5Bumper bumper_msg;
+		bumper_msg.header.stamp = ros::Time::now();
+		bumper_msg.bumper_pressed = bumper_pressed;
+		bumper_msg.motor_stop = motor_stop;
+
+		bumper_publisher_.publish(bumper_msg);
+
+
+		/// sonar
 
 		/// enable or disable sonar if someone or no one is listening
 		static bool sonar_is_requested = false;
@@ -841,7 +863,7 @@ public:
 				scitos_base_.getSonar(measurements);
 
 				sensor_msgs::Range sonar_msg;
-				sonar_msg.header.stamp = currentTime;
+				sonar_msg.header.stamp = odom_time;
 				sonar_msg.radiation_type = sensor_msgs::Range::ULTRASOUND;
 				sonar_msg.field_of_view = sonarConfigCircular->cone_angle;  // DEG_TO_RAD(15);	// from manual
 				sonar_msg.min_range = 0.2;	// from manual
@@ -1030,8 +1052,11 @@ private:
 	ros::NodeHandle& node_handle_;
 	ScitosBase& scitos_base_;
 	tf::TransformBroadcaster tf_broadcaster_;
+
 	ros::Publisher odom_publisher_;
 	ros::Publisher sonar_publisher_;
+	ros::Publisher bumper_publisher_;
+
 	ros::Subscriber cmd_vel_subscriber_;
 	ros::Subscriber bumper_reset_subscriber_;
 
@@ -1107,7 +1132,7 @@ int main(int argc, char **argv)
 
 	ROS_INFO("Starting diagnostics...");
 
-	ros::Publisher diagnosticsPublisher = n.advertise<diagnostic_msgs::DiagnosticArray> ("/diagnostics", 50);
+	ros::Publisher diagnosticsPublisher = n.advertise<diagnostic_msgs::DiagnosticArray>("/diagnostics", 50);
 	boost::thread(diagnosticsPublishingLoop, n, boost::ref(ros_scitos), boost::ref(diagnosticsPublisher), ros::Rate(2));
 
 

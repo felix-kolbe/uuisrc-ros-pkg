@@ -13,7 +13,7 @@ using namespace MetraLabs::robotic::base;
 using namespace MetraLabs::robotic::robot;
 
 
-class ScitosBase : private boost::noncopyable {
+class ScitosBase : public BlackboardDataUpdateCallback, private boost::noncopyable {
 
 public:
 	ScitosBase(const char*, int pArgc, char* pArgv[]);
@@ -32,6 +32,9 @@ public:
 	void getBatteryState(float& pVoltage, float& pCurrent, int16_t& pChargeState,
 			int16_t& pRemainingTime, int16_t& pChargerStatus);
 
+	void publishBumperState(bool pBumperPressed, bool pMotorStop);
+	void getBumperState(bool& pBumperPressed, bool& pMotorStop);
+
 	void setVelocity(double v, double w);
 	void loop();
 
@@ -46,105 +49,89 @@ public:
 	FeatureType getFeature(std::string name);
 
 
+	virtual void dataChanged(const BlackboardData* pData) {
+		if(pData == odometry_data_) {
+			odometryCallbackHandler();
+		} else if(pData == sonar_data_) {
+			sonarCallbackHandler();
+		} else if(pData == battery_state_data_) {
+			batteryStateCallbackHandler();
+		} else if(pData == bumper_data_) {
+			bumperDataCallbackHandler();
+		}
+	}
+
 private:
-	class OdometryCallbackHandler : public BlackboardDataUpdateCallback
-	{
-	public:
-		OdometryCallbackHandler(ScitosBase* base) : BlackboardDataUpdateCallback() {
-			m_base = base;
-		}
+	void odometryCallbackHandler() {
+		MTime tTime;
+		Pose tPose;
+		Velocity tVelocity;
+		float tMileage;
 
-		void set_base(ScitosBase* base) {
-			m_base = base;
-		}
+		odometry_data_->readLock();
+		odometry_data_->getData(tPose, tVelocity, tMileage);
+		odometry_data_->readUnlock();
 
-	private:
-		// Implementation of BlackboardDataUpdateCallback
-		void dataChanged(const BlackboardData* pData) {
-			const BlackboardDataOdometry* tOdometryData = dynamic_cast<const BlackboardDataOdometry*>(pData);
-			if (tOdometryData != NULL) {
-				MTime tTime;
-				Pose tPose;
-				Velocity tVelocity;
-				float tMileage;
+		publishOdometry(tPose.getX(), tPose.getY(), tPose.getPhi(),
+					tVelocity.getVelocityTranslational(),
+					tVelocity.getVelocityRotational());
+	}
 
-				tOdometryData->getData(tPose, tVelocity, tMileage);
-				m_base->publishOdometry(tPose.getX(), tPose.getY(), tPose.getPhi(),
-							tVelocity.getVelocityTranslational(),
-							tVelocity.getVelocityRotational());
+	void sonarCallbackHandler() {
+			MTime tTime;
 
+			sonar_data_->readLock();
+			const RangeData::Vector& tRangeData = sonar_data_->getRangeData();
+			const RangeData::Config* tSonarConfig = sonar_data_->getConfig();
+			sonar_data_->readUnlock();
+
+			const std::vector<RangeData::Measurement> tRangeMeasurements = tRangeData;
+
+			publishSonar(tRangeMeasurements);
+			publishSonarConfig(tSonarConfig);
+	}
+
+	void batteryStateCallbackHandler() {
+		MTime tTime;
+
+		battery_state_data_->readLock();
+		publishBatteryState(
+				battery_state_data_->getVoltage(),
+				battery_state_data_->getCurrent(),
+				battery_state_data_->getChargeState(),
+				battery_state_data_->getRemainingTime(),
+				battery_state_data_->getChargerStatus()
+				);
+		battery_state_data_->readUnlock();
+	}
+
+	void bumperDataCallbackHandler() {
+		MTime tTime;
+
+		bool bumper_pressed = false;
+		bool motor_stop = false;
+
+#define BUMPER_CODE_PUSHED 0x12
+#define BUMPER_CODE_LOCKED 0x02
+
+		bumper_data_->readLock();
+		BumperData::Vector bumperValues = bumper_data_->getBumperData();
+		bumper_data_->readUnlock();
+
+		for (BumperData::Vector::const_iterator it = bumperValues.begin(); it != bumperValues.end(); ++it) {
+			if (*it == BUMPER_CODE_PUSHED) {
+				bumper_pressed = true;
+				motor_stop = true;
+				break;  // no next bumper part would change any value
+			}
+			else if (*it == BUMPER_CODE_LOCKED) {
+				motor_stop = true;
 			}
 		}
 
-		ScitosBase* m_base;
-	};
+		publishBumperState(bumper_pressed, motor_stop);
+	}
 
-private:
-	class SonarCallbackHandler : public BlackboardDataUpdateCallback
-	{
-	public:
-		SonarCallbackHandler(ScitosBase* base) : BlackboardDataUpdateCallback() {
-			m_base = base;
-		}
-
-		void set_base(ScitosBase* base) {
-			m_base = base;
-		}
-
-	private:
-		// Implementation of BlackboardDataUpdateCallback
-		void dataChanged(const BlackboardData* pData) {
-			const BlackboardDataRange* tSonarData = dynamic_cast<const BlackboardDataRange*>(pData);
-			if (tSonarData != NULL) {
-				MTime tTime;
-				const RangeData::Vector& tRangeData = tSonarData->getRangeData();
-
-				const std::vector<RangeData::Measurement> tRangeMeasurements = tRangeData;
-
-//				const RangeData::Config* sonar_config_ = sonar_data_->getConfig();
-//
-//				RangeData::Config* sonar_config_ = sonar_data_->getConfig();
-
-				m_base->publishSonar(tRangeMeasurements);
-				m_base->publishSonarConfig(tSonarData->getConfig());
-			}
-		}
-
-		ScitosBase* m_base;
-	};
-
-
-private:
-	class BatteryStateCallbackHandler : public BlackboardDataUpdateCallback
-	{
-	public:
-		BatteryStateCallbackHandler(ScitosBase* base) : BlackboardDataUpdateCallback() {
-			m_base = base;
-		}
-
-		void set_base(ScitosBase* base) {
-			m_base = base;
-		}
-
-	private:
-		// Implementation of BlackboardDataUpdateCallback
-		void dataChanged(const BlackboardData* pData) {
-			const BlackboardDataBatteryState* tBatteryStateData = dynamic_cast<const BlackboardDataBatteryState*>(pData);
-			if (tBatteryStateData != NULL) {
-				MTime tTime;
-
-				m_base->publishBatteryState(
-						tBatteryStateData->getVoltage(),
-						tBatteryStateData->getCurrent(),
-						tBatteryStateData->getChargeState(),
-						tBatteryStateData->getRemainingTime(),
-						tBatteryStateData->getChargerStatus()
-						);
-			}
-		}
-
-		ScitosBase* m_base;
-	};
 
 private:
 	Application* app_;
@@ -153,14 +140,12 @@ private:
 	Robot* robot_;
 
 	BlackboardDataOdometry* odometry_data_;
-	BlackboardDataVelocity* velocity_data_;
 	BlackboardDataRange* sonar_data_;
 	BlackboardDataBatteryState* battery_state_data_;
-	BlackboardDataUInt8* bumper_reset_cmd_;
+	BlackboardDataBumper* bumper_data_;
 
-	OdometryCallbackHandler odometry_handler_;
-	SonarCallbackHandler sonar_handler_;
-	BatteryStateCallbackHandler battery_state_handler_;
+	BlackboardDataVelocity* velocity_cmd_;
+	BlackboardDataUInt8* bumper_reset_cmd_;
 
 	double odom_x_;
 	double odom_y_;
@@ -180,6 +165,8 @@ private:
 	int16_t battery_remaining_time_;
 	int16_t battery_charger_status_;
 
+	bool bumper_pressed_;
+	bool motor_stop_;
 };
 
 #endif
