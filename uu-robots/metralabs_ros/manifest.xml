@@ -6,6 +6,8 @@
   </description>
   <author>Yianni Gatsoulis and Chris Burbridge and Lorenzo Riano and Felix Kolbe</author>
   <license>GPL</license>
+
+  <rewiew status="deprecated" notes="Use new repo: https://github.com/cburbridge/scitos"/>
   
   <depend package="roscpp"/>
   <depend package="rospy"/>
