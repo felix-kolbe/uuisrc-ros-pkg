@@ -3,21 +3,26 @@
 try:
     import os
     import sys
+    from threading import Thread
+    
+    import math
+    from math import pi, radians, degrees
+    
     import gtk
     import pygtk
     pygtk.require("2.0")
     import gobject
+    
     import csv
+    import xml.dom.minidom
+    
     import roslib; roslib.load_manifest('schunk_gui')
     import rospy
-    from std_msgs.msg import *
-    import xml.dom.minidom
+    
+    from std_msgs.msg import Bool, Int8
     from sensor_msgs.msg import JointState
     from metralabs_ros.msg import SchunkStatus
-    import math
-    from math import pi
-    from math import degrees
-    from threading import Thread
+
     import tf
 
 except:
@@ -33,13 +38,19 @@ SCHUNK_STATUS_TOPIC="/schunk/status"
 
 class RosCommunication():
     def __init__(self):
-        description = rospy.get_param("schunk_description")
+        description = rospy.get_param("schunk_description", None)   # used by many schunk packages
+        if description is None:
+            description = rospy.get_param("robot_description", None)    # used by most packages
+        assert description is not None, "Neither robot_description nor schunk_description given"
+        
         robot = xml.dom.minidom.parseString(description).getElementsByTagName('robot')[0]
-        self.free_joints = {}
-        self.joint_lookup={}
-        self.joint_list = [] # for maintaining the original order of the joints
-        self.currentJointStates=JointState()
-        self.currentSchunkStatus=SchunkStatus()
+        self.joint_name_to_config_dict = {}
+        self.joint_name_to_index_dict = {}
+        self.joint_names_list = []    # joint names in real order
+        self.currentJointStates = JointState()
+        self.currentJointStates_jointIndex_to_msgIndex_dict = {}
+        self.currentSchunkStatus = SchunkStatus()
+        self.currentSchunkStatus_jointIndex_to_msgIndex_dict = {}
         self.dependent_joints = rospy.get_param("dependent_joints", {})
        
         if rospy.has_param("~tip_name"):
@@ -57,7 +68,7 @@ class RosCommunication():
             rospy.logwarn("No root name specified, end effector position won't work")
             self.__root = "none"
         
-        # Find all non-fixed joints
+        # Find all non-fixed non-mimicking joints
         self.numModules = 0
         for child in robot.childNodes:
             if child.nodeType is child.TEXT_NODE:
@@ -67,7 +78,7 @@ class RosCommunication():
                 if jtype == 'fixed':
                     continue
                     
-                # encoding needed for most lookups like "self.roscomms.joint_list[module]"
+                # encoding needed for most lookups like "self.roscomms.joint_names_list[module]"
                 name = child.getAttribute('name').encode('ascii')
                 if jtype == 'continuous':
                     minval = -pi
@@ -86,10 +97,13 @@ class RosCommunication():
                     zeroval = 0
 
                 joint = {'min':minval, 'max':maxval, 'zero':zeroval, 'value':zeroval }
-                self.free_joints[name] = joint              # store joint
-                self.joint_list.append(name)                # store joints name
-                self.joint_lookup[name] = self.numModules   # store index for joint
-                self.numModules += 1                
+                self.joint_name_to_config_dict[name] = joint    # store joint
+                self.joint_names_list.append(name)    # store joints name
+                self.joint_name_to_index_dict[name] = self.numModules    # store index for joint
+                
+                rospy.loginfo("Registered joint with index '%d' and name '%s'.", self.numModules, name)
+                
+                self.numModules += 1
 
         # Setup all of the pubs and subs
         self.velocityPub = rospy.Publisher(VELOCITY_CMD_TOPIC, JointState)
@@ -121,14 +135,43 @@ class RosCommunication():
         
         
     def jointStateUpdate(self, data):
-        #new joint states
+        """ Store new joint states data and calculate the index lookup dict as the message might not be sorted.
+        
+        In other words: When the joint has real index x, which index does it have in this message?
+        So no states consuming method should sort or search in the msg name array anymore!
+        """
         self.currentJointStates = data
-        pass
+        
+        # get name_to_index dict for message
+        self.currentJointStates_jointIndex_to_msgIndex_dict = {}
+        for msg_i in range(len(self.currentJointStates.name)):
+            msg_name = self.currentJointStates.name[msg_i]
+            try:
+                name_i = self.joint_name_to_index_dict[msg_name]
+                self.currentJointStates_jointIndex_to_msgIndex_dict[name_i] = msg_i
+            except KeyError:
+                # message removed because this case is happening with mimicking joints
+                # rospy.logwarn("JointStatus message contains a joint I don't know from the robot_description: %s.", msg_name)
+                pass
     
     def schunkStatusUpdate(self, data):
-        #schunk status
+        """ Store new schunk status data and calculate the index lookup dict as the message might not be sorted.
+        
+        In other words: When the joint has real index x, which index does it have in this message?
+        So no status consuming method should sort or search in the msg name array anymore!
+        """  
         self.currentSchunkStatus = data
-        pass
+        
+        # get name_to_index dict for message
+        self.currentSchunkStatus_jointIndex_to_msgIndex_dict = {}
+        for msg_i in range(len(self.currentSchunkStatus.joints)):
+            msg_name = self.currentSchunkStatus.joints[msg_i].jointName
+            try:
+                name_i = self.joint_name_to_index_dict[msg_name]
+                self.currentSchunkStatus_jointIndex_to_msgIndex_dict[name_i] = msg_i
+            except KeyError:
+                rospy.logwarn("SchunkStatus message contains a joint I don't know from the robot_description: %s.", msg_name)
+
 
     # The actual communication loop
     def loop(self):
@@ -136,7 +179,6 @@ class RosCommunication():
         r = rospy.Rate(hz) 
         
         while not rospy.is_shutdown():
-            msg = JointState()
             self.targetPosition.header.stamp = rospy.Time.now()
 
             # Publish commands if wanted
@@ -174,9 +216,6 @@ class RosCommunication():
             r.sleep()
             
     def getEndPosition(self):
-        #TODO: these frames are hard coded - need to make them parameters
-#        frame_from = '/schunk/position/PAM112_BaseConector'
-#        frame_to = '/schunk/position/GripperBox'
         frame_from = self.__root
         frame_to = self.__tip
 
@@ -185,7 +224,7 @@ class RosCommunication():
             self.tfListener.waitForTransform(frame_from, frame_to, now, rospy.Duration(3.0))
             (trans,rot) = self.tfListener.lookupTransform(frame_from, frame_to, now)
         except (tf.LookupException, tf.ConnectivityException):
-            print "Can't get end effector transform.!"
+            rospy.logerr("Can't get end effector transform!")
             return 0, 0, 0, 0, 0, 0, 0
         return trans[0], trans[1], trans[2], rot[0], rot[1], rot[2], rot[3]
 
@@ -199,8 +238,8 @@ class SchunkTextControl:
         
         # roscomms
         self.roscomms = RosCommunication()
+        # run roscomms in a seperate thread
         self.roscommsThread = Thread(target=self.roscomms.loop)
-        #Thread(target=self.roscomms.loop).start() # run roscomms in a seperate thread
         self.roscommsThread.start()
         
         # get number of modules
@@ -213,11 +252,11 @@ class SchunkTextControl:
 
         # set some initial display messages
         self.wTree.get_object("labelNumModules").set_text(str(self.numModules))
-        self.wTree.get_object("status").set_text("Yes, Master")
+        self.set_status_text("Yes, Master")
         self.commandWidget = self.wTree.get_object("command")
         
         # bindings
-        bindings = {"on_window1_destroy":self.shutdown, 
+        bindings = {"on_window1_destroy":self.window_shutdown, 
                     "on_buttonClear_clicked":self.clear, 
                     "on_buttonExecute_clicked":self.execute, 
                     "on_command_changed":self.command_changed,
@@ -249,6 +288,9 @@ class SchunkTextControl:
         # Text input field of comboboxentry command is a gtk.Entry object
         entry = self.commandWidget.get_children()[0]
         entry.connect("activate", self.command_enter_pressed, self.commandWidget)
+        
+        # make gui close from external request like rosnode kill
+        rospy.on_shutdown(lambda: gtk.main_quit())
 
         # handle history
         self.historyLength = 100
@@ -281,12 +323,12 @@ class SchunkTextControl:
         self.limitsStrings = []
         for i in range(0,self.numModules):
             self.pose.append(0)
-            moduleName = self.roscomms.joint_list[i]
-            minLimit = self.roscomms.free_joints[moduleName]["min"]
-            minLimit *= 180 / pi
+            moduleName = self.roscomms.joint_names_list[i]
+            minLimit = self.roscomms.joint_name_to_config_dict[moduleName]["min"]
+            minLimit = degrees(minLimit)
             minLimit = int(minLimit) - 1
-            maxLimit = self.roscomms.free_joints[moduleName]["max"]
-            maxLimit *= 180 / pi
+            maxLimit = self.roscomms.joint_name_to_config_dict[moduleName]["max"]
+            maxLimit = degrees(maxLimit)
             maxLimit = int(maxLimit) + 1
             self.modules_minlimits.append(minLimit)
             self.modules_maxlimits.append(maxLimit)
@@ -305,7 +347,7 @@ class SchunkTextControl:
         for i in range (0,self.numModules):
             #name = "joint " + str(i) + ":"
             #name = str(i) + ":"
-            name = str(i) + " (" + self.roscomms.joint_list[i] + "):"
+            name = str(i) + " (" + self.roscomms.joint_names_list[i] + "):"
             vbox = gtk.VBox(False, 0)
             posesframe_vboxes.append(vbox)
             label = gtk.Label(name)
@@ -329,7 +371,7 @@ class SchunkTextControl:
         velframe_labels = []
         self.velframe_spinButtons = []
         for i in range (0,self.numModules):
-            name = str(i) + " (" + self.roscomms.joint_list[i] + "):"
+            name = str(i) + " (" + self.roscomms.joint_names_list[i] + "):"
             vbox = gtk.VBox(False, 0)
             velframe_vboxes.append(vbox)
             label = gtk.Label(name)
@@ -366,7 +408,7 @@ class SchunkTextControl:
         self.flags = []
         for i in range(self.numModules):
             # joint index
-            label = gtk.Label(str(i) + " (" + self.roscomms.joint_list[i] + "):")
+            label = gtk.Label(str(i) + " (" + self.roscomms.joint_names_list[i] + "):")
             #label.set_justify(gtk.JUSTIFY_LEFT)
             label.set_alignment(0, 0.5)
             self.tableFlags.attach(label, 0, 1, 1+i, 1+i+1) # need to skip first title row
@@ -405,13 +447,27 @@ class SchunkTextControl:
         self.dictJointsAngles_set_appropriate_buttons_sensitive()
         
 
-    def shutdown(self, widget):
+    def window_shutdown(self, widget):
         # kill gtk thread
         gtk.main_quit()
-        # kill roscomms thread
-        self.roscommsThread.join(0) # I think it is dead!
+
         # kill ros thread
         rospy.signal_shutdown("Because I said so!")
+        
+        # Wait for roscomm thread to stop
+        self.roscommsThread.join()
+
+
+    def set_status_text_error(self, status_string):
+        self.set_status_text('Error: '+status_string, '#FF0000')
+        
+    def set_status_text_warning(self, status_string):
+        self.set_status_text('Warning: '+status_string, '#FF00FF')
+    
+    def set_status_text(self, status_string, color_string=None):
+        self.wTree.get_object("status").set_text(status_string)
+        if color_string is not None:
+            self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse(color_string))
 
 
     def parser(self, string):
@@ -459,8 +515,7 @@ class SchunkTextControl:
             self.wTree.get_object("aFlagsFrame").set_sensitive(False)
             self.wTree.get_object("vboxCommand").set_sensitive(False)
             self.wTree.get_object("image1").set_from_file("go75.png")
-            self.wTree.get_object("status").set_text("Astalavista baby. No way Master Yianni's fault")
-            self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
+            self.set_status_text("Astalavista baby. No way Master Yianni's fault", '#FF0000')
         else:
             # GO
             #self.roscomms.emergencyStop = False
@@ -475,8 +530,7 @@ class SchunkTextControl:
             self.wTree.get_object("aFlagsFrame").set_sensitive(True)
             self.wTree.get_object("vboxCommand").set_sensitive(True)
             self.wTree.get_object("image1").set_from_file("stop75.png")
-            self.wTree.get_object("status").set_text("I am back, Master")
-            self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#000000'))
+            self.set_status_text("I am back, Master", '#000000')
 
 
     def load_history(self):
@@ -573,7 +627,7 @@ class SchunkTextControl:
         else:
             self.wTree.get_object("radiobuttonDialogAddJointsAnglesAfter").set_sensitive(False)
             self.wTree.get_object("radiobuttonDialogAddJointsAnglesBefore").set_sensitive(False)
-            self.wTree.get_object("labelDialogAddJointsAnglesIndex").set_text("")       
+            self.wTree.get_object("labelDialogAddJointsAnglesIndex").set_text("")
         self.wTree.get_object("dialog1").show()      
         pass
 
@@ -778,13 +832,11 @@ class SchunkTextControl:
                         try:
                             value = int(tokens[2])
                             if value > self.modules_maxlimits[module] or value < self.modules_minlimits[module]:
-                                self.wTree.get_object("status").set_text("WARNING: Let me see you licking your elbow mate")
-                                self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF00FF'))
+                                self.set_status_text_warning("Let me see you licking your elbow mate")
                         except:
                             pass
                     except:
-                        self.wTree.get_object("status").set_text("WARNING: module does not exist")
-                        self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF00FF'))
+                        self.set_status_text_warning("module does not exist")
                 except:
                     self.wTree.get_object("status").set_text("")
                     
@@ -798,13 +850,11 @@ class SchunkTextControl:
                         try:
                             value = int(tokens[2])
                             if value > self.modules_velmax or value < self.modules_velmin:
-                                self.wTree.get_object("status").set_text("WARNING: Hope you have a safe distance mate")
-                                self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF00FF'))
+                                self.set_status_text_warning("Hope you have a safe distance mate")
                         except:
                             pass
                     except:
-                        self.wTree.get_object("status").set_text("WARNING: module does not exist")
-                        self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF00FF'))
+                        self.set_status_text_warning("module does not exist")
                 except:
                     self.wTree.get_object("status").set_text("")                
                 pass
@@ -812,8 +862,7 @@ class SchunkTextControl:
                 try:
                     module = int(tokens[1])
                     if (module >= self.numModules) or (module < 0):
-                        self.wTree.get_object("status").set_text("WARNING: module does not exist")
-                        self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF00FF'))
+                        self.set_status_text_warning("module does not exist")
                 except:
                     self.wTree.get_object("status").set_text("")
         except:
@@ -861,11 +910,9 @@ class SchunkTextControl:
                     self.roscomms.ackNumber = module
                     self.roscomms.ackJoint = True
                 else:
-                    self.wTree.get_object("status").set_text("ERROR: ack failed. Module does not exist")
-                    self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
+                    self.set_status_text_error("ack failed. Module does not exist")
             except:
-                self.wTree.get_object("status").set_text("ERROR: move velocity failed. Module does not exist")
-                self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
+                self.set_status_text_error("move velocity failed. Module does not exist")
         except:
             self.roscomms.ackAll = True
 
@@ -890,14 +937,11 @@ class SchunkTextControl:
                     self.roscomms.refNumber = module
                     self.roscomms.refJoint = True
                 else:
-                    self.wTree.get_object("status").set_text("ERROR: ref failed. Module does not exist")
-                    self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
+                    self.set_status_text_error("ref failed. Module does not exist")
             except:
-                self.wTree.get_object("status").set_text("ERROR: ref failed. Module does not exist")
-                self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
+                self.set_status_text_error("ref failed. Module does not exist")
         except:
-            self.wTree.get_object("status").set_text("ERROR: ref failed. Need to specify module id or 'all'")
-            self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
+            self.set_status_text_error("ref failed. Need to specify module id or 'all'")
 
 
     def cb_move_all(self, widget):
@@ -927,18 +971,17 @@ class SchunkTextControl:
                         if self.inDegrees:
                             valueCheckLimit = int(value)
                         else:
-                            valueCheckLimit = float(value) * 180 / pi
+                            valueCheckLimit = degrees(float(value))
                             valueCheckLimit = int(valueCheckLimit)
                         if valueCheckLimit > self.modules_maxlimits[module] or valueCheckLimit < self.modules_minlimits[module]:
-                            self.wTree.get_object("status").set_text("ERROR: I told you I can't lick my elbow. Move failed")
-                            self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
+                            self.set_status_text_error("I told you I can't lick my elbow. Move failed")
                             return
                         try:
                             value = float(value)
                             if self.inDegrees:
-                                value = value * pi / 180
+                                value = radians(value)
                             self.roscomms.targetPosition.name=[]
-                            self.roscomms.targetPosition.name.append(self.roscomms.joint_list[module])
+                            self.roscomms.targetPosition.name.append(self.roscomms.joint_names_list[module])
                             self.roscomms.targetPosition.position = [value]
                             #print self.roscomms.targetPosition
                             self.roscomms.setPosition = True
@@ -946,32 +989,29 @@ class SchunkTextControl:
                             print "move failed: not valid value"
                     except:
                         # move from spinbutton if tokens[2] not given
-                        value = float(self.posesframe_spinButtons[module].get_value()) * pi / 180
+                        value = radians(float(self.posesframe_spinButtons[module].get_value()))
                         self.roscomms.targetPosition.name=[]
-                        self.roscomms.targetPosition.name.append(self.roscomms.joint_list[module])
+                        self.roscomms.targetPosition.name.append(self.roscomms.joint_names_list[module])
                         self.roscomms.targetPosition.position = [value]
                         #print self.roscomms.targetPosition
                         self.roscomms.setPosition = True 
                 else:
-                    self.wTree.get_object("status").set_text("ERROR: move failed. Module does not exist")
-                    self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
+                    self.set_status_text_error("move failed. Module does not exist")
             except:
-                self.wTree.get_object("status").set_text("ERROR: move failed. Module does not exist")
-                self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
+                self.set_status_text_error("move failed. Module does not exist")
         except:
-            self.wTree.get_object("status").set_text("ERROR: move failed. Need to specify module id or 'all'")
-            self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))      
+            self.set_status_text_error("move failed. Need to specify module id or 'all'")      
 
 
     def move_all(self):
         self.roscomms.targetPosition.name=[]
         self.roscomms.targetPosition.position=[]
         for module in range(0,self.numModules):
-            name = self.roscomms.joint_list[module]
+            name = self.roscomms.joint_names_list[module]
             self.roscomms.targetPosition.name.append(name)
             value = float(self.posesframe_spinButtons[module].get_value())
             if self.inDegrees: # convert to radians, else it is already in radians
-                 value *= pi / 180
+                value = radians(value)
             self.roscomms.targetPosition.position.append(value)
             #print roscomms.targetPosition
             self.roscomms.setPosition = True
@@ -994,11 +1034,9 @@ class SchunkTextControl:
                 if module >= 0 and module < self.numModules:
                     pass
                 else:
-                    self.wTree.get_object("status").set_text("ERROR: currents max failed. Module does not exist")
-                    self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
+                    self.set_status_text_error("currents max failed. Module does not exist")
             except:
-                self.wTree.get_object("status").set_text("ERROR: currents max failed. Module does not exist")
-                self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
+                self.set_status_text_error("currents max failed. Module does not exist")
         except:
             self.roscomms.maxCurrents = True
     
@@ -1011,7 +1049,7 @@ class SchunkTextControl:
         self.roscomms.targetVelocity.name=[]
         self.roscomms.targetVelocity.velocity=[]
         for module in range(0,self.numModules):
-            name = self.roscomms.joint_list[module]
+            name = self.roscomms.joint_names_list[module]
             self.roscomms.targetVelocity.name.append(name)
             value = 0.0
             self.roscomms.targetVelocity.velocity.append(value)
@@ -1034,42 +1072,38 @@ class SchunkTextControl:
                     try:
                         value = tokens[2]
                         if int(value) > self.modules_velmax or int(value) < self.modules_velmin:
-                            self.wTree.get_object("status").set_text("ERROR: Can't go at speed of light. Move velocity failed")
-                            self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
+                            self.set_status_text_error("Can't go at speed of light. Move velocity failed")
                             return
                         try:
-                            value = float(value) * pi / 180
+                            value = radians(float(value))
                             self.roscomms.targetVelocity.name=[]
-                            self.roscomms.targetPosition.name.append(self.roscomms.joint_list[module])
+                            self.roscomms.targetPosition.name.append(self.roscomms.joint_names_list[module])
                             self.roscomms.targetVelocity.velocity = [value]
                             self.roscomms.setVelocity = True
                         except:
                             print "move_vel failed: not valid value"
                     except:
                         # move from spinbutton if tokens[2] not given
-                        value = float(self.velframe_spinButtons[module].get_value()) * pi / 180
+                        value = radians(float(self.velframe_spinButtons[module].get_value()))
                         self.roscomms.targetVelocity.name=[]
-                        self.roscomms.targetPosition.name.append(self.roscomms.joint_list[module])
+                        self.roscomms.targetPosition.name.append(self.roscomms.joint_names_list[module])
                         self.roscomms.targetVelocity.velocity = [value]
                         self.roscomms.setVelocity = True 
                 else:
-                    self.wTree.get_object("status").set_text("ERROR: move velocity failed. Module does not exist")
-                    self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
+                    self.set_status_text_error("move velocity failed. Module does not exist")
             except:
-                self.wTree.get_object("status").set_text("ERROR: move velocity failed. Module does not exist")
-                self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
+                self.set_status_text_error("move velocity failed. Module does not exist")
         except:
-            self.wTree.get_object("status").set_text("ERROR: move velocity failed. Need to specify module id or 'all'")
-            self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
+            self.set_status_text_error("move velocity failed. Need to specify module id or 'all'")
       
 
     def move_vel_all(self):
         self.roscomms.targetVelocity.name=[]
         self.roscomms.targetVelocity.velocity=[]
         for i in range(0,self.numModules):
-            name = self.roscomms.joint_list[i]
+            name = self.roscomms.joint_names_list[i]
             self.roscomms.targetVelocity.name.append(name)
-            value = float(self.velframe_spinButtons[i].get_value()) * pi / 180
+            value = radians(float(self.velframe_spinButtons[i].get_value()))
             self.roscomms.targetVelocity.velocity.append(value)
             self.roscomms.setVelocity = True
 
@@ -1091,7 +1125,7 @@ class SchunkTextControl:
             #self.wTree.get_object("labelJointAngles").set_text("Joint angles (deg)")
             for i in range(0,self.numModules):
                 value = float(self.posesframe_spinButtons[i].get_value())
-                value *= 180 / pi
+                value = degrees(value)
                 self.posesframe_spinButtons[i].set_range(self.modules_minlimits[i], self.modules_maxlimits[i])
                 self.posesframe_spinButtons[i].set_value(value)
                 self.posesframe_spinButtons[i].update()
@@ -1099,45 +1133,36 @@ class SchunkTextControl:
             #self.wTree.get_object("labelJointAngles").set_text("Joint angles (rad)")
             for i in range(0,self.numModules):
                 value = float(self.posesframe_spinButtons[i].get_value())
-                value *= pi / 180
-                self.posesframe_spinButtons[i].set_range(self.modules_minlimits[i]*pi/180, self.modules_maxlimits[i]*pi/180)
+                value = radians(value)
+                self.posesframe_spinButtons[i].set_range(radians(self.modules_minlimits[i]), radians(self.modules_maxlimits[i]))
                 self.posesframe_spinButtons[i].set_value(value)
                 self.posesframe_spinButtons[i].update()
    
 
     def update_flags(self, *args):
         for module_i in range(self.numModules):
-            # find index of current module in msg currentJointStates
-            msg_i = -1
-            for names_i in range(len(self.roscomms.currentJointStates.name)):
-                if self.roscomms.joint_list[module_i] == self.roscomms.currentJointStates.name[names_i]:
-                    msg_i = names_i
-                    break
-            
-            # if found..
-            if msg_i != -1:
+            ## joint state
+            try:
+                # lookup index in message for current module
+                msg_i = self.roscomms.currentJointStates_jointIndex_to_msgIndex_dict[module_i]
+                
                 label = self.flags[module_i][self.flagsDict["Position"]]
                 flagRadians = self.roscomms.currentJointStates.position[msg_i]            
-                flag = flagRadians * 180 / pi
+                flag = degrees(flagRadians)
                 if (flag < 0.05) and (flag > -0.05):
                     flag = 0.0            
                 string = "%.2f / %.3f" % (flag, flagRadians)
                 label.set_text(string)
                 #flag = round(flag, 2)
                 #label.set_text(str(flag))
-            else:
-                self.wTree.get_object("status").set_text("Error: Joint '"+self.roscomms.joint_list[module_i]+"' not found in joint state message!")
-                self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
+            except KeyError:
+                self.set_status_text_error("Joint '"+self.roscomms.joint_names_list[module_i]+"' not found in JointState message!")
             
-            # find index of current module in msg currentSchunkStatus
-            msg_i = -1
-            for names_i in range(len(self.roscomms.currentSchunkStatus.joints)):
-                if self.roscomms.joint_list[module_i] == self.roscomms.currentSchunkStatus.joints[names_i].jointName:
-                    msg_i = names_i
-                    break
-            
-            # if found..
-            if msg_i != -1:
+            ## schunk status
+            try:
+                # lookup index in message for current module
+                msg_i = self.roscomms.currentSchunkStatus_jointIndex_to_msgIndex_dict[module_i]
+
                 label = self.flags[module_i][self.flagsDict["Referenced"]]
                 flag = self.roscomms.currentSchunkStatus.joints[msg_i].referenced
                 label.set_text(str(flag))
@@ -1209,41 +1234,34 @@ class SchunkTextControl:
                     label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
                 else:
                     label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#000000'))
-            else:
-                self.wTree.get_object("status").set_text("Error: Joint '"+self.roscomms.joint_list[module_i]+"' not found in schunk status message!")
-                self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
+            except:
+                self.set_status_text_error("Joint '"+self.roscomms.joint_names_list[module_i]+"' not found in SchunkStatus message!")
             
         return True
 
 
     def on_buttonCopyCurrent_clicked(self, widget):
         for module_i in range(self.numModules):
-            # find index of current module in msg currentJointStates
-            msg_i = -1
-            for names_i in range(len(self.roscomms.currentJointStates.name)):
-                if self.roscomms.joint_list[module_i] == self.roscomms.currentJointStates.name[names_i]:
-                    msg_i = names_i
-                    break
-            
-            # if found..
-            if msg_i != -1:
-                flagRadians = float(self.roscomms.currentJointStates.position[msg_i])
+            try:
+                # lookup index in message for current module
+                msg_i = self.roscomms.currentJointStates_jointIndex_to_msgIndex_dict[module_i]
+                
+                posRadians = float(self.roscomms.currentJointStates.position[msg_i])
                 if self.inDegrees:
-                    flag = flagRadians * 180 / pi
-                    if (flag < 0.05) and (flag > -0.05):
-                        flag = 0.0
+                    posDegrees = degrees(posRadians)
+                    if (posDegrees < 0.05) and (posDegrees > -0.05):
+                        posDegrees = 0.0
 #Neither work                        
-#                    string = "%.4f" % flag
-#                    flag = float(string)
+#                    string = "%.4f" % posDegrees
+#                    posDegrees = float(string)
 # or
-#                    flag = round(flag, 4)
-                    self.posesframe_spinButtons[module_i].set_value(flag)
+#                    posDegrees = round(posDegrees, 4)
+                    self.posesframe_spinButtons[module_i].set_value(posDegrees)
                 else:
-#                    flagRadians = round(flagRadians, 4)
-                    self.posesframe_spinButtons[module_i].set_value(flagRadians)
-            else:
-                self.wTree.get_object("status").set_text("Error: Joint '"+self.roscomms.joint_list[module_i]+"' not found in joint state message!")
-                self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
+#                    posRadians = round(posRadians, 4)
+                    self.posesframe_spinButtons[module_i].set_value(posRadians)
+            except KeyError:
+                self.set_status_text_error("Joint '"+self.roscomms.joint_names_list[module_i]+"' not found in joint state message!")
         pass
 
 
@@ -1259,7 +1277,7 @@ class SchunkTextControl:
         value = quaternion_to_euler(pose[3], pose[4], pose[5], pose[6])
         rpy = []
         for v in value:
-            rpy.append(v*180/pi)
+            rpy.append(degrees(v))
         for i in range(0,len(rpy)):
             if rpy[i] < 0.005 and rpy[i] > -0.005:
                 rpy[i] = 0.0
