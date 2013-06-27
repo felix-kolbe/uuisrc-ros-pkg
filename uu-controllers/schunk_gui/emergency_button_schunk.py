@@ -18,10 +18,10 @@ except:
 class EmergencyStopButton:
 	def __init__(self):
 		self.wTree = gtk.glade.XML("emergency_button_schunk.glade", "window1")		
-		dic = { "on_togglebutton1_toggled" : self.emergency_stop, "on_window1_destroy" : self.shutdown }
+		dic = { "on_togglebutton1_toggled" : self.emergency_stop, "on_window1_destroy" : self.window_shutdown }
 		self.wTree.signal_autoconnect(dic)
 
-	def shutdown(self, widget):
+	def window_shutdown(self, widget):
 		gtk.main_quit()
 		rospy.signal_shutdown("Bye!")
 

@@ -1,33 +1,28 @@
 #!/usr/bin/env python
 
-try:
-    import os
-    import sys
-    from threading import Thread
-    
-    import math
-    from math import pi, radians, degrees
-    
-    import gtk
-    import pygtk
-    pygtk.require("2.0")
-    import gobject
-    
-    import csv
-    import xml.dom.minidom
-    
-    import roslib; roslib.load_manifest('schunk_gui')
-    import rospy
-    
-    from std_msgs.msg import Bool, Int8
-    from sensor_msgs.msg import JointState
-    from metralabs_ros.msg import SchunkStatus
+import os
+import sys
+from threading import Thread
 
-    import tf
+import math
+from math import pi, radians, degrees
 
-except:
-    print "One (or more) of the dependencies is not satisfied"
-    sys.exit(1)
+import gtk
+import pygtk
+pygtk.require("2.0")
+import gobject
+
+import csv
+import xml.dom.minidom
+
+import roslib; roslib.load_manifest('schunk_gui')
+import rospy
+
+from std_msgs.msg import Bool, Int8
+from sensor_msgs.msg import JointState
+from metralabs_ros.msg import SchunkStatus
+
+import tf
 
 
 RANGE = 10000
@@ -261,7 +256,7 @@ class SchunkTextControl:
                     "on_buttonExecute_clicked":self.execute, 
                     "on_command_changed":self.command_changed,
                     "on_tbHelp_toggled":self.tb_help,
-                    "on_command_move_active":self.history, 
+                    "on_command_move_active":self.command_move_active,
                     "on_buttonSavePose_clicked":self.save_pose,
                     "on_buttonLoadPose_clicked":self.load_pose,
                     "on_buttonMoveAll_clicked":self.cb_move_all,
@@ -290,7 +285,7 @@ class SchunkTextControl:
         entry.connect("activate", self.command_enter_pressed, self.commandWidget)
         
         # make gui close from external request like rosnode kill
-        rospy.on_shutdown(lambda: gtk.main_quit())
+        rospy.on_shutdown(lambda: gtk.main_quit()) # lambda needed, pylint: disable=W0108
 
         # handle history
         self.historyLength = 100
@@ -542,7 +537,7 @@ class SchunkTextControl:
             for line in lines:
                 line = line.rstrip("\n")
                 self.history_append(line, False)
-        except:
+        except IOError:
             pass
 
 
@@ -559,7 +554,7 @@ class SchunkTextControl:
             self.history_append_to_file(string)
 
 
-    def history(self, widget, arg2):
+    def command_move_active(self, widget, arg2):
         # following should bring the cursor to the end but it does not unless you hit the up arrow twice and this works only on the top item
         widget.child.set_position(-1)
 
@@ -751,7 +746,7 @@ class SchunkTextControl:
                 w = csv.writer(open(filename, "wb"), delimiter=':', quoting=csv.QUOTE_NONE)
                 w.writerows(self.listJointsAngles)
             except:
-                print "failed to write to file (save_listof_joints_angles)"
+                print "failed to write to file %s (save_listof_joints_angles)", filename
             #pickle.dump(self.dictJointsAngles, open(filename, "wb"))
         elif response == gtk.RESPONSE_CANCEL:
             pass
@@ -771,12 +766,13 @@ class SchunkTextControl:
             filename = dialog.get_filename()
             #self.dictJointsAngles = pickle.load(open(filename))
             try:
+                # each line looks like: "cam down:[0.0, 30.0, 75.0, -135.0, 0.0]"
                 r = csv.reader(open(filename, "rb"), delimiter=':', quoting=csv.QUOTE_NONE)
                 del self.listJointsAngles[:]
                 for row in r:
                     key = row[0]
-                    value = map(float, row[1].strip("[]").split(", "))
-                    line = [key, value]
+                    values = map(float, row[1].strip("[]").split(","))
+                    line = [key, values]
                     self.listJointsAngles.append(line)
                 self.combolistJointsAngles.clear()
                 for i in range(len(self.listJointsAngles)):
@@ -785,7 +781,7 @@ class SchunkTextControl:
                     self.combolistJointsAngles.append([key])            
                 self.wTree.get_object("labelDisplayJointsAngles").set_text("")                    
             except:
-                print "load file failed (load_listof_joints_angles)"
+                print "failed to load from file %s (load_listof_joints_angles)", filename
         elif response == gtk.RESPONSE_CANCEL:
             pass
         self.dictJointsAngles_set_appropriate_buttons_sensitive()
@@ -844,7 +840,9 @@ class SchunkTextControl:
                 try:
                     module = int(tokens[1])
                     try:
-                        moduleExists = self.modules_maxlimits[module] # this is actually the joint angle limits and not the velocity, but it helps to detect whether the module entered exists
+                        # this is actually the joint angle limits and not the velocity
+                        # but it helps to detect whether the module entered exists
+                        moduleExists = self.modules_maxlimits[module]  # @UnusedVariable
                         string = "Range (deg/s): " + str(self.modules_velmin) + " to " + str(self.modules_velmax)
                         self.wTree.get_object("status").set_text(string)
                         try:
@@ -1340,7 +1338,7 @@ if __name__ == "__main__":
     wd = os.path.dirname(sys.argv[0])
     try:
         os.chdir(wd)
-    except:
+    except OSError:
         print "Working directory does not exist. Check for mispellings"
         sys.exit(1)
     
