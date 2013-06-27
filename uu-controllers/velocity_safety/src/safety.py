@@ -13,7 +13,7 @@ import math
 #
 rospy.loginfo("Starting velocity safety node")
 currentJointStates = JointState()
-pub = rospy.Publisher('/schunk/target_vc/joint_states', JointState) # publish if ok on this topic
+pub = rospy.Publisher('/schunk/move_all_velocity', JointState) # publish if ok on this topic
 
 
 def callbackJointStates(data):

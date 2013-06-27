@@ -26,7 +26,6 @@
 	<param name="planning_frame_id" type="string" value="/ScitosBase" />
 	<remap from="collision_map" to="collision_map_occ" />
 	<remap from="collision_map_update" to="collision_map_occ_update" />    
-	<remap from="joint_states" to="/schunk/position/joint_states" /> 
 <!-- 	<remap from="/ompl_planning/groups" to="/robot_description_planning/groups" /> -->
 	
 	<!-- if we are moving the base, it is best to maintain the map in a fixed frame since identified objects that are being published
@@ -46,7 +45,6 @@
   <!-- Planning	Environment-->
   
   <node pkg="planning_environment" type="environment_server" output="screen" respawn="false" name="environment_server_schunk">
-	<remap from="joint_states" to="/schunk/position/joint_states" />
         <remap from="collision_map" to="collision_map_occ" />
         <remap from="collision_map_update" to="collision_map_occ_update" />
         
@@ -68,7 +66,6 @@
   <!-- Trajectory filter -->
 
   <node pkg="trajectory_filter_server" name="trajectory_filter" type="trajectory_filter_server" output="screen">
-    <remap from="/joint_states" to="/schunk/position/joint_states" />
 		
     <rosparam command="load" file="$(find schunk_planning)/params/5dof/schunk_joint_limits.yaml"/>
     <rosparam command="load" file="$(find schunk_planning)/params/5dof/filters.yaml"/>
@@ -90,8 +87,8 @@
   
   <node name="joint_trajectory_action" ns="schunk_arm_controller" pkg="joint_trajectory_action" type="joint_trajectory_action">
       <rosparam command="load" file="$(find schunk_planning)/params/5dof/schunk_arm_controller.yaml" />
-      <remap from="state" to="/schunk/trajectory/state" />
-      <remap from="command" to="/schunk/trajectory/command" />
+      <remap from="state" to="/schunk/trajectory_state" />
+      <remap from="command" to="/schunk/trajectory_command" />
   </node>
   
   <!-- Move Arm glue -->

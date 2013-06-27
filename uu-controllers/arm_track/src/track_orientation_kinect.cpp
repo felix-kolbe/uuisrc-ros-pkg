@@ -69,7 +69,7 @@ int main(int argc, char** argv) {
     
     Callbacks callbacks;
 
-    ros::Subscriber joints = n.subscribe("/schunk/position/joint_states", 10,
+    ros::Subscriber joints = n.subscribe("/joint_states", 10,
 		    &Callbacks::jointsCallback, &callbacks);
 
 

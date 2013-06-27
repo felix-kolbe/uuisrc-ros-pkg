@@ -26,9 +26,9 @@ import tf
 
 
 RANGE = 10000
-VELOCITY_CMD_TOPIC="/schunk/target_vc/joint_states"
-POSITION_CMD_TOPIC="/schunk/target_pc/joint_states"
-JOINT_STATE_TOPIC="/schunk/position/joint_states"
+VELOCITY_CMD_TOPIC="/schunk/move_all_velocity"
+POSITION_CMD_TOPIC="/schunk/move_all_position"
+JOINT_STATE_TOPIC="/joint_states"
 SCHUNK_STATUS_TOPIC="/schunk/status"
 
 class RosCommunication():
@@ -185,27 +185,27 @@ class RosCommunication():
                 self.setVelocity = False
             if self.ackJoint:
                 print "/ack"
-                rospy.Publisher("/ack", Int8, latch=True).publish(self.ackNumber)
+                rospy.Publisher("/schunk/ack", Int8, latch=True).publish(self.ackNumber)
                 self.ackJoint = False
             if self.refJoint:
                 self.refJoint = False
                 print "/ref"
-                rospy.Publisher("/ref", Int8, latch=True).publish(self.refNumber)
+                rospy.Publisher("/schunk/ref", Int8, latch=True).publish(self.refNumber)
             if self.ackAll:
                 print "/ackAll"
-                rospy.Publisher("/ackAll", Bool, latch=True).publish(True)
+                rospy.Publisher("/schunk/ackAll", Bool, latch=True).publish(True)
                 self.ackAll = False
             if self.refAll:
                 print "/refAll"
-                rospy.Publisher("/refAll", Bool, latch=True).publish(True)
+                rospy.Publisher("/schunk/refAll", Bool, latch=True).publish(True)
                 self.refAll = False
             if self.maxCurrents:
                 print "/currentsmaxall"
-                rospy.Publisher("/currentsMaxAll", Bool, latch=True).publish(True)
+                rospy.Publisher("/schunk/currentsMaxAll", Bool, latch=True).publish(True)
                 self.maxCurrents = False
             if self.emergencyStop:
                 print "/emergency"
-                rospy.Publisher("/emergency", Bool, latch=True).publish(True)
+                rospy.Publisher("/schunk/emergency", Bool, latch=True).publish(True)
                 self.emergencyStop = False
             
             r.sleep()
