@@ -18,7 +18,7 @@ import xml.dom.minidom
 import roslib; roslib.load_manifest('schunk_gui')
 import rospy
 
-from std_msgs.msg import Bool, Int8
+from std_msgs.msg import Empty, Int8
 from sensor_msgs.msg import JointState
 from metralabs_ros.msg import SchunkStatus
 
@@ -193,19 +193,19 @@ class RosCommunication():
                 rospy.Publisher("/schunk/ref", Int8, latch=True).publish(self.refNumber)
             if self.ackAll:
                 print "/ackAll"
-                rospy.Publisher("/schunk/ackAll", Bool, latch=True).publish(True)
+                rospy.Publisher("/schunk/ack_all", Empty, latch=True).publish()
                 self.ackAll = False
             if self.refAll:
                 print "/refAll"
-                rospy.Publisher("/schunk/refAll", Bool, latch=True).publish(True)
+                rospy.Publisher("/schunk/ref_all", Empty, latch=True).publish()
                 self.refAll = False
             if self.maxCurrents:
                 print "/currentsmaxall"
-                rospy.Publisher("/schunk/currentsMaxAll", Bool, latch=True).publish(True)
+                rospy.Publisher("/schunk/set_current_max_all", Empty, latch=True).publish()
                 self.maxCurrents = False
             if self.emergencyStop:
                 print "/emergency"
-                rospy.Publisher("/schunk/emergency", Bool, latch=True).publish(True)
+                rospy.Publisher("/schunk/emergency_stop", Empty, latch=True).publish()
                 self.emergencyStop = False
             
             r.sleep()

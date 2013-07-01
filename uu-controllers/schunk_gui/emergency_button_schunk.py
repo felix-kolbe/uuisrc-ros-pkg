@@ -28,12 +28,11 @@ class EmergencyStopButton:
 	def emergency_stop(self, widget):
 		if widget.get_active():
 			# STOP
-			rospy.Publisher("/emergency", Bool, latch=True).publish(True)
+			rospy.Publisher("/emergency", Empty, latch=True).publish()
 			self.wTree.get_widget("image1").set_from_file("go.png")
 		else:
 			# GO
-			rospy.Publisher("/emergency", Bool, latch=True).publish(False)
-			rospy.Publisher("/ackAll", Bool, latch=True).publish(True)
+			rospy.Publisher("/ack_all", Empty, latch=True).publish()
 			self.wTree.get_widget("image1").set_from_file("stop.png")	
 
 if __name__ == "__main__":
