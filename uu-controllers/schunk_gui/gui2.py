@@ -36,9 +36,9 @@ class RosCommunication():
     def __init__(self):
         description = rospy.get_param("schunk_description")
         robot = xml.dom.minidom.parseString(description).getElementsByTagName('robot')[0]
-        self.free_joints = {}
-        self.joint_lookup={}
-        self.joint_list = [] # for maintaining the original order of the joints
+        self.joint_name_to_config_dict = {}
+        self.joint_name_to_index_dict={}
+        self.joint_names_list = [] # for maintaining the original order of the joints
         self.currentJointStates=JointState()
         self.currentSchunkStatus=SchunkStatus()
         self.dependent_joints = rospy.get_param("dependent_joints", {})
@@ -69,9 +69,9 @@ class RosCommunication():
                     zeroval = 0
 
                 joint = {'min':minval, 'max':maxval, 'zero':zeroval, 'value':zeroval }
-                self.free_joints[name] = joint
-                self.joint_list.append(name)
-                self.joint_lookup[name] = self.numModules
+                self.joint_name_to_config_dict[name] = joint
+                self.joint_names_list.append(name)
+                self.joint_name_to_index_dict[name] = self.numModules
                 self.numModules += 1
 
         # Setup all of the pubs and subs
@@ -194,9 +194,9 @@ class SchunkTextControl:
         self.commandWidget = self.wTree.get_widget("command")
         
         # bindings
-        bindings = {"on_window1_destroy":self.shutdown, 
+        bindings = {"on_window1_destroy":self.window_shutdown,
                     "on_buttonClear_clicked":self.clear, 
-                    "on_buttonExecute_clicked":self.execute, 
+                    "on_buttonExecute_clicked":self.execute,
                     "on_command_changed":self.command_changed,
                     "on_tbHelp_toggled":self.tb_help,
                     "on_command_move_active":self.history, 
@@ -247,10 +247,10 @@ class SchunkTextControl:
         for i in range(0,self.numModules):
             self.pose.append(0)
             moduleName = "Joint" + str(i)
-            minLimit = self.roscomms.free_joints[moduleName]["min"]
+            minLimit = self.roscomms.joint_name_to_config_dict[moduleName]["min"]
             minLimit *= 180 / pi
             minLimit = int(minLimit) - 1
-            maxLimit = self.roscomms.free_joints[moduleName]["max"]
+            maxLimit = self.roscomms.joint_name_to_config_dict[moduleName]["max"]
             maxLimit *= 180 / pi
             maxLimit = int(maxLimit) + 1
             self.modules_minlimits.append(minLimit)
@@ -349,7 +349,7 @@ class SchunkTextControl:
         print self.inDegrees
         
 
-    def shutdown(self, widget):
+    def window_shutdown(self, widget):
         # kill gtk thread
         gtk.main_quit()
         # kill roscomms thread
@@ -449,9 +449,9 @@ class SchunkTextControl:
             self.history_append_to_file(string)
 
 
-    def history(self, widget, arg2):
-        # following should bring the cursor to the end but it does not unless you hit the up arrow twice and this works only on the top item
-        widget.child.set_position(-1)
+#     def history(self, widget, arg2):
+#         # following should bring the cursor to the end but it does not unless you hit the up arrow twice and this works only on the top item
+#         widget.child.set_position(-1)
 
 
     def save_pose(self, widget):
