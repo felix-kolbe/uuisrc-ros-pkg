@@ -20,7 +20,7 @@ import rospy
 
 from std_msgs.msg import Empty, Int8
 from sensor_msgs.msg import JointState
-from metralabs_ros.msg import SchunkStatus
+from metralabs_msgs.msg import SchunkStatus
 
 import tf
 

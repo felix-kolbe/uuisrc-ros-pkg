@@ -7,7 +7,7 @@
   <review status="unreviewed" notes=""/>
 
   <depend package="rospy" />
-  <depend package="metralabs_ros" />
+  <depend package="metralabs_msgs" />
   <depend package="sensor_msgs" />
   <depend package="tf" />
   <rosdep name="wxpython" />
