@@ -453,6 +453,9 @@ class SchunkTextControl:
         self.roscommsThread.join()
 
 
+    def set_status_text_info(self, status_string):
+        self.set_status_text('Info: '+status_string, '#000000')
+
     def set_status_text_error(self, status_string):
         self.set_status_text('Error: '+status_string, '#FF0000')
         
@@ -460,7 +463,11 @@ class SchunkTextControl:
         self.set_status_text('Warning: '+status_string, '#FF00FF')
     
     def set_status_text(self, status_string, color_string=None):
-        self.wTree.get_object("status").set_text(status_string)
+        """
+        Each argument can be set to None to be ignored and only change the other value.
+        """
+        if status_string is not None:
+            self.wTree.get_object("status").set_text(status_string)
         if color_string is not None:
             self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse(color_string))
 
@@ -604,7 +611,6 @@ class SchunkTextControl:
         elif response == gtk.RESPONSE_CANCEL:
             pass
         dialog.destroy()
-        pass
 
 
     def add_joints_angles_vector(self, widget):
@@ -624,7 +630,6 @@ class SchunkTextControl:
             self.wTree.get_object("radiobuttonDialogAddJointsAnglesBefore").set_sensitive(False)
             self.wTree.get_object("labelDialogAddJointsAnglesIndex").set_text("")
         self.wTree.get_object("dialog1").show()      
-        pass
 
 
     def entryJointsAnglesVectorName_changed(self, widget):
@@ -641,7 +646,6 @@ class SchunkTextControl:
 
     def dialogJointsAnglesVectorCancel(self, widget):
         self.wTree.get_object("dialog1").hide()
-        pass
 
 
     def dialogJointsAnglesVectorOK(self, widget):
@@ -670,7 +674,6 @@ class SchunkTextControl:
             self.combolistJointsAngles.insert(index, [name])
             self.dictJointsAngles_set_appropriate_buttons_sensitive()
             self.wTree.get_object("dialog1").hide()
-        pass
     
     
     def dialogJointsAnglesName_enter_pressed(self, entry):
@@ -707,7 +710,6 @@ class SchunkTextControl:
                 self.posesframe_spinButtons[i].set_value(value)
         except:
             print "Error occured in function <copy_to_joints_angles>"
-        pass
 
 
     def remove_joints_angles_vector(self, widget):
@@ -729,7 +731,6 @@ class SchunkTextControl:
                 print "bad"
                 return
         self.dictJointsAngles_set_appropriate_buttons_sensitive()
-        pass
 
 
     def save_listof_joints_angles(self, widget):        
@@ -751,7 +752,6 @@ class SchunkTextControl:
         elif response == gtk.RESPONSE_CANCEL:
             pass
         dialog.destroy()
-        pass
 
 
     def load_listof_joints_angles(self, widget):
@@ -786,7 +786,6 @@ class SchunkTextControl:
             pass
         self.dictJointsAngles_set_appropriate_buttons_sensitive()
         dialog.destroy()
-        pass        
 
 
     def find_unique_name_for_joints_angles_vector(self):
@@ -797,14 +796,12 @@ class SchunkTextControl:
                 i += 1
             else:
                 return name
-        pass
 
 
     def dictJointsAngles_set_appropriate_buttons_sensitive(self):
         value = (self.comboboxJointsAngles.get_active() >= 0)
         self.wTree.get_object("buttonListJointsAnglesCopyCurrent").set_sensitive(value)
         self.wTree.get_object("buttonListJointsAnglesRemoveCurrent").set_sensitive(value)
-        pass
 
 
     def add_words(self, words):
@@ -817,14 +814,14 @@ class SchunkTextControl:
     def command_changed(self, widget):
         tokens = widget.get_active_text().split()
         if tokens != []:
-            self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#000000'))
+            self.set_status_text(None, '#000000')  # TODO: check if needed or following call can be replaced with _info
         try:
             if tokens[0] == "move":
                 try:
                     module = int(tokens[1])
                     try:
                         string = "Range (deg/s): " + self.limitsStrings[module]
-                        self.wTree.get_object("status").set_text(string)
+                        self.set_status_text(string)
                         try:
                             value = int(tokens[2])
                             if value > self.modules_maxlimits[module] or value < self.modules_minlimits[module]:
@@ -834,7 +831,7 @@ class SchunkTextControl:
                     except:
                         self.set_status_text_warning("module does not exist")
                 except:
-                    self.wTree.get_object("status").set_text("")
+                    self.set_status_text("")
                     
             elif tokens[0] == "vel":
                 try:
@@ -844,7 +841,7 @@ class SchunkTextControl:
                         # but it helps to detect whether the module entered exists
                         moduleExists = self.modules_maxlimits[module]  # @UnusedVariable
                         string = "Range (deg/s): " + str(self.modules_velmin) + " to " + str(self.modules_velmax)
-                        self.wTree.get_object("status").set_text(string)
+                        self.set_status_text(string)
                         try:
                             value = int(tokens[2])
                             if value > self.modules_velmax or value < self.modules_velmin:
@@ -854,15 +851,14 @@ class SchunkTextControl:
                     except:
                         self.set_status_text_warning("module does not exist")
                 except:
-                    self.wTree.get_object("status").set_text("")                
-                pass
+                    self.set_status_text("")
             else:
                 try:
                     module = int(tokens[1])
                     if (module >= self.numModules) or (module < 0):
                         self.set_status_text_warning("module does not exist")
                 except:
-                    self.wTree.get_object("status").set_text("")
+                    self.set_status_text("")
         except:
             pass
 
@@ -1260,7 +1256,6 @@ class SchunkTextControl:
                     self.posesframe_spinButtons[module_i].set_value(posRadians)
             except KeyError:
                 self.set_status_text_error("Joint '"+self.roscomms.joint_names_list[module_i]+"' not found in joint state message!")
-        pass
 
 
     def update_pose(self, *args):
@@ -1306,8 +1301,7 @@ class SchunkTextControl:
 
     def command_not_found(self, token):
         msg = "Ich spreche nicht Deutch. Was ist '" +  token + "'? Druckte 'Hilfe' fur Vokabelliste"
-        self.wTree.get_object("status").set_text(msg)
-        self.wTree.get_object("status").modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#FF0000'))
+        self.set_status_text_error(msg)
 
 # delete not needed any more
 #    def get_limits_strings(self):

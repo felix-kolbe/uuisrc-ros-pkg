@@ -29,13 +29,13 @@ class RosCommunication():
     def __init__(self):
         description = rospy.get_param("schunk_description")
         robot = xml.dom.minidom.parseString(description).getElementsByTagName('robot')[0]
-        self.free_joints = {}
-        self.joint_lookup={}
-        self.joint_list = [] # for maintaining the original order of the joints
+        self.joint_name_to_config_dict = {}
+        self.joint_name_to_index_dict={}
+        self.joint_names_list = [] # for maintaining the original order of the joints
         self.currentJointStates=JointState()
         self.currentSchunkStatus=SchunkStatus()
         self.dependent_joints = rospy.get_param("dependent_joints", {})
-        self.shutdown = False
+        self.window_shutdown = False
 
         # Find all non-fixed joints
         number=0
@@ -63,9 +63,9 @@ class RosCommunication():
                     zeroval = 0
 
                 joint = {'min':minval, 'max':maxval, 'zero':zeroval, 'value':zeroval }
-                self.free_joints[name] = joint
-                self.joint_list.append(name)
-                self.joint_lookup[name]=number
+                self.joint_name_to_config_dict[name] = joint
+                self.joint_names_list.append(name)
+                self.joint_name_to_index_dict[name]=number
                 number=number+1
 
         # Setup all of the pubs and subs
@@ -107,7 +107,7 @@ class RosCommunication():
         hz = 10 # 10hz
         r = rospy.Rate(hz) 
         
-        while not rospy.is_shutdown() and not self.shutdown:
+        while not rospy.is_shutdown() and not self.window_shutdown:
             msg = JointState()
             self.targetPosition.header.stamp = rospy.Time.now()
 
@@ -146,7 +146,7 @@ class RosCommunication():
             r.sleep()
 
     def end(self):
-        self.shutdown=True
+        self.window_shutdown=True
 
 
 class SchunkGui(wx.Frame):
@@ -160,8 +160,8 @@ class SchunkGui(wx.Frame):
         font = wx.Font(9, wx.SWISS, wx.NORMAL, wx.BOLD)
         
         ### Sliders ###
-        for name in self.roscomms.joint_list:
-            joint = self.roscomms.free_joints[name]
+        for name in self.roscomms.joint_names_list:
+            joint = self.roscomms.joint_name_to_config_dict[name]
 
             if joint['min'] == joint['max']:
                 continue
@@ -397,10 +397,10 @@ class SchunkGui(wx.Frame):
             roscomms.emergencyStop = True
             print 'Ahhhhhhh!'
         elif button.GetLabel()=='Ack':
-            roscomms.ackNumber=roscomms.joint_lookup[button.GetName()]
+            roscomms.ackNumber=roscomms.joint_name_to_index_dict[button.GetName()]
             roscomms.ackJoint = True
         elif button.GetLabel()=='Ref':
-            roscomms.refNumber=roscomms.joint_lookup[button.GetName()]
+            roscomms.refNumber=roscomms.joint_name_to_index_dict[button.GetName()]
             roscomms.refJoint = True
         elif button.GetLabel()=='Move':
             ## populate the roscoms command message
@@ -438,7 +438,7 @@ class SchunkGui(wx.Frame):
             if dialog.ShowModal() == wx.ID_OK:
                 print 'Loading:', dialog.GetPath()
                 f = open(dialog.GetPath(), 'r')
-                for name,line in zip(roscomms.joint_list,f):
+                for name,line in zip(roscomms.joint_names_list,f):
                     print name
                     print line
                     joint = self.joint_map[name]['joint']
@@ -462,7 +462,7 @@ class SchunkGui(wx.Frame):
             if dialog.ShowModal() == wx.ID_OK:
                 print 'Saving:', dialog.GetPath()
                 f = open(dialog.GetPath(), 'w')
-                for name in roscomms.joint_list:
+                for name in roscomms.joint_names_list:
                     f.write('%.5f\n'%self.joint_map[name]['joint']['value'])
                 f.close()
 
