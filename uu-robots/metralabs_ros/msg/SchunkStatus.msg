@@ -1,1 +1,0 @@
-SchunkJointStatus[] joints
