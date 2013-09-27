@@ -185,27 +185,27 @@ class RosCommunication():
                 self.setVelocity = False
             if self.ackJoint:
                 print "/ack"
-                rospy.Publisher("/schunk/ack", Int8, latch=True).publish(self.ackNumber)
+                rospy.Publisher("/schunk/ack", Int8).publish(self.ackNumber)
                 self.ackJoint = False
             if self.refJoint:
                 self.refJoint = False
                 print "/ref"
-                rospy.Publisher("/schunk/ref", Int8, latch=True).publish(self.refNumber)
+                rospy.Publisher("/schunk/ref", Int8).publish(self.refNumber)
             if self.ackAll:
                 print "/ackAll"
-                rospy.Publisher("/schunk/ack_all", Empty, latch=True).publish()
+                rospy.Publisher("/schunk/ack_all", Empty).publish()
                 self.ackAll = False
             if self.refAll:
                 print "/refAll"
-                rospy.Publisher("/schunk/ref_all", Empty, latch=True).publish()
+                rospy.Publisher("/schunk/ref_all", Empty).publish()
                 self.refAll = False
             if self.maxCurrents:
                 print "/currentsmaxall"
-                rospy.Publisher("/schunk/set_current_max_all", Empty, latch=True).publish()
+                rospy.Publisher("/schunk/set_current_max_all", Empty).publish()
                 self.maxCurrents = False
             if self.emergencyStop:
                 print "/emergency"
-                rospy.Publisher("/schunk/emergency_stop", Empty, latch=True).publish()
+                rospy.Publisher("/schunk/emergency_stop", Empty).publish()
                 self.emergencyStop = False
             
             r.sleep()
